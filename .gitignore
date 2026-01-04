@@ -1,0 +1,9 @@
+exp/__pycache__/
+exp/Data/
+exp/Logs/
+exp/Instructions/
+exp/MaskGS.gif
+
+exp/src/__pycache__/
+
+others/Instructions/
