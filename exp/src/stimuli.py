@@ -4,111 +4,99 @@ Stimulus creation and management
 from psychopy import visual
 from numpy import cos, sin, pi
 from experiment_params import (
-    FixationSize, CueBoxSize, CueTextSize, LetterSize, TargetDistance,
-    MaskSize, CueDistance, CueLocRotation, TargetLocRotation,
-    CueTextColor, CueBgColor, LetterColor, FixationPointColor,
-    NoCueLocations, CueAssocList, NoTargets, StimFactor
+    FixationSize, CueBoxSize, CueTextSize, ColorTargetSize, TargetDistance,
+    CueDistance, CueLocRotation, TargetLocRotation,
+    CueTextColor, CueBgColor, FixationPointColor,
+    NoCueLocations, CueAssocList, NoTargets, StimulusTargetColorsRGB
 )
 
 
 def create_cue_locations():
     """
-    Generate cue location coordinates based on association type
+    Generate cue location coordinates - arranged in a cross pattern
     
     Returns:
-        List of [x, y] coordinates for each cue location
+        List of [x, y] coordinates - one pair per cue location in degrees
     """
-    locations = []
-    for i in range(NoCueLocations):
-        x = CueDistance * (CueAssocList[i] - 1 - 1.5)
-        y = 0
-        locations.append([x, y])
-    return locations
+    locations = []  # List: will contain [x, y] pairs for each cue position
+    for i in range(NoCueLocations):  # Loop through 4 cue positions
+        # Calculate position using polar coordinates converted to Cartesian
+        x = CueDistance * cos(2 * pi / NoCueLocations * (CueAssocList[i] - 1) + CueLocRotation)  # Float: x position in degrees
+        y = CueDistance * sin(2 * pi / NoCueLocations * (CueAssocList[i] - 1) + CueLocRotation)  # Float: y position in degrees
+        locations.append([x, y])  # Add position to list
+    return locations  # List: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
 
 
 def create_target_locations():
     """
-    Generate target location coordinates
+    Generate target location coordinates - arranged around center in cross pattern
     
     Returns:
-        List of [x, y] coordinates for each target location
+        List of [x, y] coordinates - one pair per target location in degrees
     """
-    locations = []
-    for i in range(NoTargets):
-        x = TargetDistance * cos(2 * pi / NoTargets * i + TargetLocRotation)
-        y = TargetDistance * sin(2 * pi / NoTargets * i + TargetLocRotation)
-        locations.append([x, y])
-    return locations
+    locations = []  # List: will contain [x, y] pairs for each target position
+    for i in range(NoTargets):  # Loop through 4 target positions
+        # Calculate position using polar coordinates converted to Cartesian
+        x = TargetDistance * cos(2 * pi / NoTargets * i + TargetLocRotation)  # Float: x position in degrees
+        y = TargetDistance * sin(2 * pi / NoTargets * i + TargetLocRotation)  # Float: y position in degrees
+        locations.append([x, y])  # Add position to list
+    return locations  # List: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
 
 
 def create_stimuli(win, cue_locations, target_locations):
     """
-    Create all visual stimuli objects
+    Create all visual stimuli objects - fixation, cues, arrows, color targets
     
     Args:
-        win: PsychoPy window object
-        cue_locations: List of cue [x, y] coordinates
-        target_locations: List of target [x, y] coordinates
+        win: PsychoPy Window object - the display window
+        cue_locations: List of [x, y] pairs - cue positions in degrees
+        target_locations: List of [x, y] pairs - target positions in degrees
     
     Returns:
-        Dictionary containing all stimulus objects
+        Dictionary - contains all stimulus objects organized by type
     """
-    stimuli = {}
+    stimuli = {}  # Dictionary: will store all stimulus objects
     
-    # Fixation point
+    # Fixation point - small circle at center of screen
     stimuli['fixation'] = visual.Circle(
-        win, size=FixationSize, units='deg', fillColor=FixationPointColor
+        win, size=FixationSize, units='deg', fillColor=FixationPointColor  # Circle: black dot, 0.16 deg diameter
     )
     
-    # Cue boxes and text
-    stimuli['cue_boxes'] = []
-    stimuli['cue_texts'] = []
-    stimuli['cue_arrows'] = []
+    # Cue boxes and text - white squares with numbers inside
+    stimuli['cue_boxes'] = []  # List: will contain Rect objects for cue backgrounds
+    stimuli['cue_texts'] = []  # List: will contain TextStim objects for cue numbers
+    stimuli['cue_arrows'] = []  # List: will contain Line objects connecting cues to targets
     
-    for i in range(NoCueLocations):
-        # Cue box (square)
+    for i in range(NoCueLocations):  # Loop through 4 cue positions
+        # Cue box - white square background
         cue_box = visual.Rect(
             win, width=CueBoxSize, height=CueBoxSize, units='deg',
-            fillColor=CueBgColor, pos=cue_locations[i]
+            fillColor=CueBgColor, pos=cue_locations[i]  # Rect: white square, 0.7 deg size
         )
-        stimuli['cue_boxes'].append(cue_box)
+        stimuli['cue_boxes'].append(cue_box)  # Add to list
         
-        # Cue text
+        # Cue text - number displayed in box
         cue_text = visual.TextStim(
             win, text="", height=CueTextSize, units='deg',
-            color=CueTextColor, pos=cue_locations[i]
+            color=CueTextColor, pos=cue_locations[i]  # TextStim: black number, 0.56 deg height
         )
-        stimuli['cue_texts'].append(cue_text)
+        stimuli['cue_texts'].append(cue_text)  # Add to list
         
-        # Cue arrows (lines from cues to targets)
-        # Map cue location to associated target location using CueAssocList
-        target_idx = CueAssocList[i] - 1  # Convert to 0-based index
+        # Cue arrows - lines from cues to associated targets
+        target_idx = CueAssocList[i] - 1  # Integer: convert to 0-based index (1->0, 2->1, etc.)
         arrow = visual.Line(
-            win, lineColor=(0, 0, 0), units='deg'
+            win, lineColor=(0, 0, 0), units='deg'  # Line: black line connecting cue to target
         )
-        arrow.setVertices([cue_locations[i], target_locations[target_idx]])
-        stimuli['cue_arrows'].append(arrow)
+        arrow.setVertices([cue_locations[i], target_locations[target_idx]])  # Set endpoints: from cue to target
+        stimuli['cue_arrows'].append(arrow)  # Add to list
     
-    # Letter stimuli
-    stimuli['letter_stim'] = []
-    for i in range(NoTargets):
-        letter = visual.TextStim(
-            win, text="", height=LetterSize, units='deg',
-            color=LetterColor, pos=target_locations[i]
+    # Color targets - colored circles at target positions
+    stimuli['color_targets'] = []  # List: will contain Circle objects for colored targets
+    for i in range(NoTargets):  # Loop through 4 target positions
+        color_target = visual.Circle(
+            win, radius=ColorTargetSize/2, units='deg',  # Circle: colored circle, 0.4 deg radius
+            fillColor=(0, 0, 0), pos=target_locations[i]  # Color set later per trial
         )
-        stimuli['letter_stim'].append(letter)
+        stimuli['color_targets'].append(color_target)  # Add to list
     
-    # Masks - using Rectangles as simple pattern masks (no image file needed)
-    stimuli['masks'] = []
-    for i in range(NoTargets):
-        # Create a simple rectangle mask with pattern-like appearance
-        mask = visual.Rect(
-            win, width=MaskSize[0], height=MaskSize[1], 
-            units='deg', fillColor=(0.5, 0.5, 0.5),  # Gray mask
-            lineColor=(0.3, 0.3, 0.3), lineWidth=2,  # Dark border
-            pos=target_locations[i]
-        )
-        stimuli['masks'].append(mask)
-    
-    return stimuli
-
+    return stimuli  # Dictionary: {'fixation': Circle, 'cue_boxes': [Rect...], 'cue_texts': [TextStim...], ...}
