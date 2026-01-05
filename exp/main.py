@@ -16,9 +16,10 @@ from experiment_params import (
     ExpCueSet, PracCueSet, ExpCueSetVal, PracCueSetVal,  # Lists: cue combinations
     ExpCueSOAconds, PracCueSOAconds, ExpStimED, PracStimED,  # Integers/lists: timing parameters
     ExpNoBlocks, PracNoBlocks, ExpRepetitions, PracRepetitions,  # Integers/tuples: block configuration
-    NoCueLocations, CueSymbols, CueValue, NoTargets,  # Integers/lists: stimulus parameters
-    RewardMoneyFactor, StimulusTargetColors, StimulusTargetColorsRGB,  # Floats/lists: reward and colors
-    ResponseKeys, TrialStartJitterOffsetTime, TrialStartJitterMeanTime, TrialStartJitterMaxTime  # Lists/floats: response and timing
+    NoCueLocations, CueSymbols, CueValue, NoTargets, CueAssocList,  # Integers/lists: stimulus parameters
+    RewardMoneyFactor, StimulusTargetColors, StimulusTargetColorsRGB, StimulusColorNoResponses,  # Floats/lists: reward and colors
+    ResponseKeys, TrialStartJitterOffsetTime, TrialStartJitterMeanTime, TrialStartJitterMaxTime,  # Lists/floats: response and timing
+    PracShowAllTargets, PracCueArrowResponseAssociations, CueBgColor  # Lists/floats: practice session display settings and colors
 )
 from display import setup_monitor, create_window  # Functions: window setup
 from stimuli import create_cue_locations, create_target_locations, create_stimuli  # Functions: stimulus creation
@@ -99,16 +100,48 @@ for trial_num, trial in enumerate(all_trials):  # Loop: through each trial
             stimuli['cue_texts'][i].setText("")  # String: empty text (no cue shown)
     
     # Set color targets - assign colors to target positions
-    for i in range(NoTargets):  # Loop: through 4 target positions
-        color_idx = int(trial.target_colors[i]) - 1  # Integer: convert "1"->0, "2"->1, etc. (0-based index)
-        stimuli['color_targets'][i].setColor(StimulusTargetColorsRGB[color_idx])  # Tuple: set RGB color (red, green, blue, or yellow)
+    # Handle first practice session: show single cue+target in center if PracShowAllTargets[0] == 0
+    show_all_targets = True  # Boolean: whether to show all targets or just one in center
+    if session <= no_prac_sessions and PracShowAllTargets[session - 1] == 0:  # Check: first practice session?
+        show_all_targets = False  # Boolean: show only single cue+target in center
+        for i in range(NoTargets):  # Loop: through 4 target positions
+            if trial.cues[i] == 0:  # Check: no cue at this position?
+                # Hide this target - move off screen
+                stimuli['cue_boxes'][i].setColor(WINDOW_CONFIG['bg_color'])  # Tuple: set to background color (black)
+                stimuli['color_targets'][i].setColor(WINDOW_CONFIG['bg_color'])  # Tuple: hide target
+                stimuli['cue_texts'][i].setPos((0, -400 * 0.04))  # Tuple: move off screen
+                stimuli['cue_boxes'][i].setPos((0, -400 * 0.04))  # Tuple: move off screen
+                stimuli['color_targets'][i].setPos((0, -400 * 0.04))  # Tuple: move off screen
+            else:  # Cue present - show in center
+                color_idx = int(trial.target_colors[i]) - 1  # Integer: convert "1"->0, "2"->1, etc.
+                stimuli['cue_boxes'][i].setColor(CueBgColor)  # Tuple: show cue box (white)
+                stimuli['color_targets'][i].setColor(StimulusTargetColorsRGB[color_idx])  # Tuple: set color
+                stimuli['cue_texts'][i].setPos((0, 0))  # Tuple: center position
+                stimuli['cue_boxes'][i].setPos((0, 0))  # Tuple: center position
+                stimuli['color_targets'][i].setPos((0, 0))  # Tuple: center position
+    else:  # Show all targets at their positions
+        for i in range(NoTargets):  # Loop: through 4 target positions
+            color_idx = int(trial.target_colors[i]) - 1  # Integer: convert "1"->0, "2"->1, etc. (0-based index)
+            stimuli['color_targets'][i].setColor(StimulusTargetColorsRGB[color_idx])  # Tuple: set RGB color (red, green, blue, or yellow)
+            stimuli['cue_boxes'][i].setColor(CueBgColor)  # Tuple: ensure cue box is visible
+            stimuli['cue_texts'][i].setPos(cue_locations[i])  # Tuple: reset to normal position
+            stimuli['cue_boxes'][i].setPos(cue_locations[i])  # Tuple: reset to normal position
+            stimuli['color_targets'][i].setPos(target_locations[i])  # Tuple: reset to normal position
     
-    # Create display buffers - pre-render stimulus combinations
-    cue_stim_list = [stimuli['fixation']] + stimuli['cue_arrows'] + stimuli['cue_boxes'] + stimuli['cue_texts']  # List: fixation + arrows + boxes + text
-    cues_display = visual.BufferImageStim(win, stim=cue_stim_list)  # BufferImageStim: cached cue display
+    # Set color-response instruction display - show which keys map to which colors
+    show_color_response = False  # Boolean: whether to show color-response mapping
+    if session <= no_prac_sessions:  # Check: practice session?
+        if PracCueArrowResponseAssociations[session - 1] == 1:  # Check: show mapping for this session?
+            show_color_response = True  # Boolean: show the mapping
+    for i in range(StimulusColorNoResponses):  # Loop: through 4 colors
+        if show_color_response:  # Check: show instruction?
+            stimuli['color_response_instruction'][i].setColor(StimulusTargetColorsRGB[i])  # Tuple: set to color (red, green, blue, yellow)
+        else:  # Hide instruction
+            stimuli['color_response_instruction'][i].setColor(WINDOW_CONFIG['bg_color'])  # Tuple: set to background (invisible)
     
-    color_stim_list = [stimuli['fixation']] + stimuli['cue_arrows'] + stimuli['color_targets'] + stimuli['cue_boxes'] + stimuli['cue_texts']  # List: fixation + arrows + colors + boxes + text
-    color_display = visual.BufferImageStim(win, stim=color_stim_list)  # BufferImageStim: cached color target display
+    # Create display buffer - cues AND colors appear together simultaneously
+    cue_color_stim_list = [stimuli['fixation']] + stimuli['cue_arrows'] + stimuli['color_targets'] + stimuli['cue_boxes'] + stimuli['cue_texts'] + stimuli['color_response_instruction']  # List: all stimuli together
+    cue_color_display = visual.BufferImageStim(win, stim=cue_color_stim_list)  # BufferImageStim: cached display with cues and colors
     
     # Present fixation
     fixation_display.draw()  # Draw: fixation point
@@ -118,23 +151,15 @@ for trial_num, trial in enumerate(all_trials):  # Loop: through each trial
     event.clearEvents()  # Clear: remove any pending keypresses
     event.waitKeys()  # Wait: for any keypress to continue
     
-    # Calculate trial start jitter - random delay before cue
+    # Calculate trial start jitter - random delay before display
     jitter_time = min([TrialStartJitterOffsetTime + random.exponential(TrialStartJitterMeanTime), TrialStartJitterMaxTime])  # Float: jitter duration in seconds (1.0-5.0s)
     core.wait(jitter_time)  # Wait: jitter duration
     
-    # Present cues
-    cues_display.draw()  # Draw: cue display
-    win.flip()  # Flip: show cues on screen
+    # Present cues AND colors together - they appear simultaneously
+    cue_color_display.draw()  # Draw: cues + colors + arrows + instructions
+    win.flip()  # Flip: show everything on screen
     trial.cue_time = trial_clock.getTime()  # Float: record timestamp (seconds)
-    
-    # Wait for SOA - delay before showing color targets
-    isi.start(trial.cue_soa / refresh_rate - delta_t)  # Start: precise timing for SOA duration
-    color_display.draw()  # Draw: color target display (prepare while waiting)
-    isi.complete()  # Complete: wait until SOA duration elapsed
-    
-    # Present color targets
-    win.flip()  # Flip: show color targets on screen
-    trial.color_target_time = trial_clock.getTime()  # Float: record timestamp (seconds)
+    trial.color_target_time = trial_clock.getTime()  # Float: same time (colors appear with cues)
     
     # Collect response - wait for keypress
     event.clearEvents()  # Clear: remove any pending keypresses
@@ -158,29 +183,34 @@ for trial_num, trial in enumerate(all_trials):  # Loop: through each trial
     # Calculate accuracy and reward - check if response matches cued color
     temp_resp = ""  # String: will contain response index as string
     try:  # Try: find response key index
-        temp_resp = str(ResponseKeys.index(trial.response) + 1)  # String: convert key to number ("Z"->"1", "X"->"2", etc.)
+        temp_resp = str(ResponseKeys.index(trial.response) + 1)  # String: convert key to number ("1"->"1", "2"->"2", etc.)
     except:  # Key not in ResponseKeys
         temp_resp = ""  # String: invalid response (empty)
     
+    # Find which target position has a cue (cues are at cue positions, need to map to target positions)
     for i in range(len(trial.target_colors)):  # Loop: through 4 target positions
+        # Find cue position that maps to this target position using CueAssocList
+        cue_pos = None  # Integer: will contain cue position index
+        for j in range(NoCueLocations):  # Loop: through 4 cue positions
+            if CueAssocList[j] - 1 == i:  # Check: this cue maps to target i? (CueAssocList is 1-based)
+                cue_pos = j  # Integer: found matching cue position
+                break
+        
         if temp_resp == trial.target_colors[i]:  # Check: response matches this target's color?
             trial.response_loc += "1"  # String: mark as selected (e.g., "1000")
             
-            trial.cue_response_rank = trial.cue_ranks[i]  # Integer: rank of selected cue (1-4)
-            
-            if trial.cues[i] > 0:  # Check: cue present at this position?
-                trial.expected_reward += CueValue[trial.cues[i] - 1]  # Integer: add cue value to expected reward
+            if cue_pos is not None and trial.cues[cue_pos] > 0:  # Check: cue present at mapped position?
+                trial.cue_response_rank = trial.cue_ranks[cue_pos]  # Integer: rank of selected cue (1-4)
+                trial.expected_reward += CueValue[trial.cues[cue_pos] - 1]  # Integer: add cue value to expected reward
                 
-                if trial.cues_val[i] > 0:  # Check: reward value present?
-                    trial.reward += CueValue[trial.cues_val[i] - 1]  # Integer: add reward value
+                if trial.cues_val[cue_pos] > 0:  # Check: reward value present?
+                    trial.reward += CueValue[trial.cues_val[cue_pos] - 1]  # Integer: add reward value
                 
-                trial.cue_response_exp_value = trial.cues[i]  # Integer: expected cue value
-                trial.cue_response_value = trial.cues_val[i]  # Integer: actual reward value
-            
-            if trial.cues[i] == 0:  # Check: no cue at this position?
-                trial.intr += 1  # Integer: intrusion error (responded to non-cued target)
-            else:  # Cue present
+                trial.cue_response_exp_value = trial.cues[cue_pos]  # Integer: expected cue value
+                trial.cue_response_value = trial.cues_val[cue_pos]  # Integer: actual reward value
                 trial.acc += 1  # Integer: correct response (1)
+            else:  # No cue at this target position
+                trial.intr += 1  # Integer: intrusion error (responded to non-cued target)
         else:  # Response doesn't match this target
             trial.response_loc += "0"  # String: mark as not selected
     

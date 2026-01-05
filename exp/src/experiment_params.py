@@ -13,6 +13,10 @@ PracCueSet = [[[1], [2], [3], [4]], [[1], [2], [3], [4]], ExpCueSet, ExpCueSet, 
 ExpCueSetVal = ExpCueSet  # List of lists: cue values for experimental trials (same as ExpCueSet)
 PracCueSetVal = PracCueSet  # List of lists: cue values for practice trials (same as PracCueSet)
 
+# Practice session display configuration
+PracShowAllTargets = [0, 1, 1, 1, 1]  # List of integers: 0 = show single cue+target in center (session 1), 1 = show all (sessions 2-5)
+PracCueArrowResponseAssociations = [1, 1, 1, 0, 0]  # List of integers: 1 = show color-response mapping, 0 = hide (per session)
+
 # SOA (Stimulus Onset Asynchrony) conditions - time between cue and color target in milliseconds
 ExpCueSOAconds = [200]  # List of integers: SOA durations for experimental trials (200ms)
 PracCueSOAconds = [[200], [200], [200], ExpCueSOAconds, ExpCueSOAconds]  # List of lists: SOA durations per practice session
@@ -43,6 +47,8 @@ CueBoxSize = 25 * StimFactor * 0.7  # Float: size of cue box in degrees (25 * 0.
 CueTextSize = 20 * StimFactor * 0.7  # Float: size of cue text in degrees (20 * 0.04 * 0.7 = 0.56 deg)
 ColorTargetSize = 20 * StimFactor  # Float: diameter of color target circle in degrees (20 * 0.04 = 0.8 deg)
 TargetDistance = 50 * StimFactor  # Float: distance from center to target in degrees (50 * 0.04 = 2.0 deg)
+ResponseColorSize = 30 * StimFactor  # Float: size of color-response instruction squares in degrees (30 * 0.04 = 1.2 deg)
+ResponseColorDistance = 50 * StimFactor  # Float: spacing between color-response instruction squares in degrees (50 * 0.04 = 2.0 deg)
 
 # Colors - RGB values from -1 to 1
 CueTextColor = (-1, -1, -1)  # Tuple of 3 floats: cue text color RGB (black text)
@@ -55,7 +61,7 @@ StimulusTargetColorsRGB = [(1, -1, -1), (-1, 1, -1), (-1, -1, 1), (1, 1, -1)]  #
 StimulusColorNoResponses = len(StimulusTargetColorsRGB)  # Integer: number of colors (4)
 
 # Response keys - keyboard keys mapped to each color
-ResponseKeys = ["Z", "X", ".", "-"]  # List of strings: keys for colors 1,2,3,4 respectively
+ResponseKeys = ["1", "2", "3", "4"]  # List of strings: keys for colors 1,2,3,4 respectively
 
 # Reward configuration
 MaxRewardFlag = True  # Boolean: show max possible reward in feedback (True = show "expected/max")

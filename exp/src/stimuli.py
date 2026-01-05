@@ -7,7 +7,8 @@ from experiment_params import (
     FixationSize, CueBoxSize, CueTextSize, ColorTargetSize, TargetDistance,
     CueDistance, CueLocRotation, TargetLocRotation,
     CueTextColor, CueBgColor, FixationPointColor,
-    NoCueLocations, CueAssocList, NoTargets, StimulusTargetColorsRGB
+    NoCueLocations, CueAssocList, NoTargets, StimulusTargetColorsRGB,
+    ResponseColorSize, ResponseColorDistance, StimulusColorNoResponses
 )
 
 
@@ -98,5 +99,15 @@ def create_stimuli(win, cue_locations, target_locations):
             fillColor=(0, 0, 0), pos=target_locations[i]  # Color set later per trial
         )
         stimuli['color_targets'].append(color_target)  # Add to list
+    
+    # Color-response instruction display - colored squares showing key mappings
+    stimuli['color_response_instruction'] = []  # List: will contain Rect objects for instruction squares
+    for i in range(StimulusColorNoResponses):  # Loop through 4 colors
+        instruction_rect = visual.Rect(
+            win, width=ResponseColorSize, height=ResponseColorSize, units='deg',  # Rect: square, 1.2 deg size
+            fillColor=(0, 0, 0),  # Color set later based on session
+            pos=(ResponseColorDistance * (-StimulusColorNoResponses/2 + 0.5 + i), -150 * 0.04)  # Tuple: position at bottom center
+        )
+        stimuli['color_response_instruction'].append(instruction_rect)  # Add to list
     
     return stimuli  # Dictionary: {'fixation': Circle, 'cue_boxes': [Rect...], 'cue_texts': [TextStim...], ...}
