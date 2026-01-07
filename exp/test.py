@@ -1,89 +1,61 @@
 import serial
 import time
 from psychopy import visual, core, event
-# from psychopy import visual, monitors
 
-
-
-# 1. Initialize serial port [cite: 133, 190]
-# Make sure the port number matches what Ubuntu recognizes (/dev/ttyACM0)
+# 1. 初始化串口 [cite: 133, 190]
 try:
     ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
-    # Give Arduino 2 seconds restart/stabilization time, this is the safety period mentioned in the paper [cite: 724]
-    core.wait(2.0) 
+    core.wait(2.0) # 等待串口稳定 [cite: 724]
 except Exception as e:
-    print(f"Serial port connection failed: {e}")
+    print(f"串口连接失败: {e}")
     core.quit()
 
-# 2. Set up experiment window and stimuli
-# Change units="deg" to units="pix"
-win = visual.Window([640, 480], fullscr=False, color="black", units="pix")
+win = visual.Window([800, 600], fullscr=False, color="black", units="pix")
 fixation = visual.TextStim(win, text="+", color="white")
-target = visual.Circle(win, radius=2, fillColor="red", lineColor="white")
-feedback = visual.TextStim(win, text="", pos=(0, -5))
+target = visual.Circle(win, radius=50, fillColor="red", lineColor="white")
+feedback = visual.TextStim(win, text="", pos=(0, -100))
 
-def run_trial(trial_num):
-    # Display fixation point, random wait 1-2 seconds
+def run_trial():
     fixation.draw()
     win.flip()
-    core.wait(1.5 + (time.time() % 1))
+    core.wait(1.0 + (time.time() % 1)) # 随机等待
 
-    # --- Key step A: Prepare to present stimulus ---
     target.draw()
-    
-    # Clear old serial port data to prevent previous false triggers from interfering [cite: 252]
-    ser.reset_input_buffer()
-    
-    # Record visual start point at screen refresh moment 
-    # win.flip() is the moment when the image actually appears on the display
+    ser.reset_input_buffer() # 呈现前清空缓存，消除误触 [cite: 252]
     win.flip() 
     
-    # --- Key step B: Send synchronization command 'S' ---
-    # According to the paper, send signal to Arduino to start internal timing [cite: 151, 297]
-    ser.write(b'S') 
+    ser.write(b'S') # 发送同步信号给 Arduino [cite: 151, 297]
     
-    # --- Key step C: Listen for RT returned by Arduino ---
     rt_ms = None
-    response_received = False
+    btn_id = None
     start_watch = core.getTime()
     
-    while not response_received and (core.getTime() - start_watch < 3.0): # 3 second timeout
+    while (core.getTime() - start_watch < 3.0): # 3秒超时
         if ser.in_waiting > 0:
-            # Read one line of data returned by Arduino (unit is microseconds) [cite: 154, 304]
+            # 读取并拆分数据 (格式: "按键,时间") [cite: 254, 284]
             raw_data = ser.readline().decode().strip()
-            try:
-                rt_us = int(raw_data)
-                rt_ms = rt_us / 1000.0  # Convert to milliseconds to meet experimental standards [cite: 290, 646]
-                response_received = True
-            except ValueError:
-                continue
+            if ',' in raw_data:
+                parts = raw_data.split(',')
+                btn_id = parts[0]
+                rt_ms = int(parts[1]) / 1000.0 # 微秒转毫秒 [cite: 290, 646]
+                break
         
-        # Allow Esc key to exit
         if 'escape' in event.getKeys():
-            win.close()
-            ser.close()
             core.quit()
 
-    return rt_ms
+    return btn_id, rt_ms
 
-# 3. Run 5 test trials
-results = []
+# 3. 运行测试
 for i in range(5):
-    rt = run_trial(i + 1)
+    btn, rt = run_trial()
     if rt:
-        results.append(rt)
-        feedback.text = f"Trial {i+1} RT: {rt:.2f} ms"
+        feedback.text = f"按键: {btn} | RT: {rt:.2f} ms"
     else:
-        feedback.text = "No keypress detected (Timeout)"
+        feedback.text = "超时未响应"
     
     feedback.draw()
     win.flip()
     core.wait(1.0)
-
-# Print final statistics [cite: 54, 78]
-if results:
-    avg_rt = sum(results) / len(results)
-    print(f"\nExperiment complete! Average reaction time: {avg_rt:.2f} ms")
 
 win.close()
 ser.close()

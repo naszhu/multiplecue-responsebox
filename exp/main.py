@@ -2,7 +2,6 @@
 Main experiment script for Cued Color Response Paradigm (CCRP)
 """
 from psychopy import core, visual, event
-from psychopy.core import StaticPeriod
 import sys
 import os
 import random as rnd
@@ -34,9 +33,9 @@ mon = setup_monitor()  # Monitor: configured monitor object
 win = create_window(mon)  # Window: display window object
 
 # Get refresh rate and timing parameters
-refresh_rate = 100  # Integer: screen refresh rate in Hz (100 Hz = 10ms per frame)
-delta_t = (1 / refresh_rate) / 2  # Float: timing adjustment in seconds (0.005 = 5ms)
-isi = StaticPeriod(None)  # StaticPeriod: object for precise frame timing
+# refresh_rate = 100  # Integer: screen refresh rate in Hz (100 Hz = 10ms per frame)
+# delta_t = (1 / refresh_rate) / 2  # Float: timing adjustment in seconds (0.005 = 5ms)
+# isi = StaticPeriod(None)  # StaticPeriod: object for precise frame timing
 
 # Generate stimulus locations
 cue_locations = create_cue_locations()  # List: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] cue positions
