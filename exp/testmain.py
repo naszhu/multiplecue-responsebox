@@ -13,6 +13,7 @@ FEEDBACK_WAIT_TIME = 1.5
 NUM_TRIALS = 5
 
 from psychopy import visual, core, event
+import random
 
 # Create window
 win = visual.Window(size=[800, 600], fullscr=False, color="black", units="pix")
@@ -36,11 +37,13 @@ cue_colors = [
     (1, 1, 0)     # Yellow
 ]
 
-# Create colored circle cues at each position
+# Create donut-shaped cues (colored outer circle with white inner circle and random number)
 cue_stimuli = []
 for i, pos in enumerate(positions):
-    cue = visual.Circle(win, radius=30, fillColor=cue_colors[i], lineColor=None, pos=pos)
-    cue_stimuli.append(cue)
+    outer = visual.Circle(win, radius=30, fillColor=cue_colors[i], lineColor=None, pos=pos)
+    inner = visual.Circle(win, radius=15, fillColor=(1, 1, 1), lineColor=None, pos=pos)  # White inner circle
+    text = visual.TextStim(win, text=str(random.randint(1, 9)), color=(-1, -1, -1), pos=pos, height=20, font='Arial Bold', bold=True)  # Bold black random number
+    cue_stimuli.append((outer, inner, text))  # Store as tuple
 
 # Fixation point
 fixation = visual.TextStim(win, text="+", color="white", height=30)
@@ -74,9 +77,15 @@ for trial in range(NUM_TRIALS):
     # Reset clock before showing cues
     clock.reset()
     
+    # Generate new random numbers for each cue
+    for outer, inner, text in cue_stimuli:
+        text.setText(str(random.randint(1, 9)))  # Update with new random number
+    
     # Show all cues and record presentation time
-    for cue in cue_stimuli:
-        cue.draw()
+    for outer, inner, text in cue_stimuli:
+        outer.draw()  # Draw colored outer circle
+        inner.draw()   # Draw white inner circle
+        text.draw()    # Draw random number text
     win.flip()
     cue_time = clock.getTime()  # Record when cues appear (should be ~0)
     
