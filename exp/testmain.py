@@ -8,6 +8,9 @@ from psychopy import logging
 logging.console.setLevel(logging.DEBUG)
 
 MAX_WAIT_TIME = 5.0
+FIXATION_WAIT_TIME = 1.0
+FEEDBACK_WAIT_TIME = 1.5
+NUM_TRIALS = 5
 
 from psychopy import visual, core, event
 
@@ -61,12 +64,12 @@ event.waitKeys(keyList=['space'])
 # Create clock for response time measurement
 clock = core.Clock()
 
-# Run 5 trials
-for trial in range(5):
+# Run trials
+for trial in range(NUM_TRIALS):
     # Show fixation
     fixation.draw()
     win.flip()
-    core.wait(1.0)
+    core.wait(FIXATION_WAIT_TIME)
     
     # Reset clock before showing cues
     clock.reset()
@@ -97,9 +100,10 @@ for trial in range(5):
         feedback.text = f"Trial {trial+1}: Timeout - no response"
     
     # Show feedback
+    feedback.pos = (0, 0)  # Ensure feedback is centered
     feedback.draw()
     win.flip()
-    core.wait(1.5)
+    core.wait(FEEDBACK_WAIT_TIME)
 
 # End message
 end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=30)
