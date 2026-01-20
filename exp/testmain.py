@@ -37,13 +37,17 @@ cue_colors = [
     (1, 1, 0)     # Yellow
 ]
 
-# Create donut-shaped cues (colored outer circle with white inner circle and random number)
-cue_stimuli = []
+# Create donut-shaped cues (colored outer circle with white inner circle)
+cue_stimuli = []  # list of tuples (outer, inner, text)
 for i, pos in enumerate(positions):
     outer = visual.Circle(win, radius=30, fillColor=cue_colors[i], lineColor=None, pos=pos)
     inner = visual.Circle(win, radius=15, fillColor=(1, 1, 1), lineColor=None, pos=pos)  # White inner circle
-    text = visual.TextStim(win, text=str(random.randint(1, 9)), color=(-1, -1, -1), pos=pos, height=20, font='Arial Bold', bold=True)  # Bold black random number
+    text = visual.TextStim(win, text="", color=(-1, -1, -1), pos=pos, height=20, font='Arial Bold', bold=True)
     cue_stimuli.append((outer, inner, text))  # Store as tuple
+
+# Pre-generate reward locations and values for all trials
+reward_locations = [random.randint(0, 3) for _ in range(NUM_TRIALS)]  # Which position (0-3) gets reward
+reward_values = [random.randint(1, 4) for _ in range(NUM_TRIALS)]  # Reward value (1-4) for each trial
 
 # Fixation point
 fixation = visual.TextStim(win, text="+", color="white", height=30)
@@ -77,15 +81,16 @@ for trial in range(NUM_TRIALS):
     # Reset clock before showing cues
     clock.reset()
     
-    # Generate new random numbers for each cue
+    # Clear all texts, then set reward value only at selected location
     for outer, inner, text in cue_stimuli:
-        text.setText(str(random.randint(1, 9)))  # Update with new random number
+        text.setText("")  # Clear all texts
+    cue_stimuli[reward_locations[trial]][2].setText(str(reward_values[trial]))  # Set reward at selected location
     
     # Show all cues and record presentation time
     for outer, inner, text in cue_stimuli:
         outer.draw()  # Draw colored outer circle
         inner.draw()   # Draw white inner circle
-        text.draw()    # Draw random number text
+        text.draw()    # Draw reward number (only one will have text)
     win.flip()
     cue_time = clock.getTime()  # Record when cues appear (should be ~0)
     
