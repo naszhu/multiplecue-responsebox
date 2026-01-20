@@ -7,7 +7,7 @@ from psychopy import logging
 
 logging.console.setLevel(logging.DEBUG)
 
-
+MAX_WAIT_TIME = 5.0
 
 from psychopy import visual, core, event
 
@@ -58,6 +58,9 @@ instructions.draw()
 win.flip()
 event.waitKeys(keyList=['space'])
 
+# Create clock for response time measurement
+clock = core.Clock()
+
 # Run 5 trials
 for trial in range(5):
     # Show fixation
@@ -65,26 +68,31 @@ for trial in range(5):
     win.flip()
     core.wait(1.0)
     
-    # Show all cues
+    # Reset clock before showing cues
+    clock.reset()
+    
+    # Show all cues and record presentation time
     for cue in cue_stimuli:
         cue.draw()
     win.flip()
+    cue_time = clock.getTime()  # Record when cues appear (should be ~0)
     
     # Wait for response
     event.clearEvents()
-    keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=5.0)
+    keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
+    
     # print(keys)
     if keys:
-        if 'escape' in keys:
+        pressed_key = keys[0][0]  # Key name
+        response_time = keys[0][1]  # Response time timestamp
+        
+        # Check for escape key
+        if pressed_key == 'escape':
             break
         
-        # Find which cue was selected
-        pressed_key = keys[0]
-        if pressed_key in response_keys:
-            cue_index = response_keys.index(pressed_key)
-            feedback.text = f"Trial {trial+1}: Responded to cue at position {cue_index+1} (key: {pressed_key})"
-        else:
-            feedback.text = f"Trial {trial+1}: No valid response"
+        rt = (response_time - cue_time) * 1000  # RT in milliseconds
+        cue_index = response_keys.index(pressed_key)
+        feedback.text = f"Trial {trial+1}: Position {cue_index+1} (key: {pressed_key})\nRT: {rt:.1f} ms"
     else:
         feedback.text = f"Trial {trial+1}: Timeout - no response"
     
