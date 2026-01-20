@@ -1,51 +1,90 @@
+"""
+Simple Multiple Q Paradigm Demo
+Multiple Q's appear on screen at different locations.
+Press corresponding key to respond.
+"""
 from psychopy import visual, core, event
-import random
 
-win = visual.Window([800,600], color='black')
+# Create window
+win = visual.Window(size=[800, 600], fullscr=False, color="black", units="pix")
 
-# Define cue positions (4 locations as an example)
-cue_positions = [(-200, 0), (200, 0), (0, 200), (0, -200)]
-cue_keys = ['a', 's', 'k', 'l']  # keys for each location
-cue_colors = ['red', 'green', 'blue', 'yellow']
+# Define Q positions (4 locations)
+positions = [
+    (-200, 200),   # Top-left
+    (200, 200),    # Top-right
+    (-200, -200),  # Bottom-left
+    (200, -200)    # Bottom-right
+]
 
-# Create colored circle cues at each position
-cues = [visual.Circle(win, pos=pos, radius=40, fillColor=color, lineColor='white', lineWidth=4) 
-        for pos, color in zip(cue_positions, cue_colors)]
+# Response keys corresponding to each position
+response_keys = ['1', '2', '3', '4']
 
-instr = visual.TextStim(
+# Create Q stimuli at each position
+q_stimuli = []
+for pos in positions:
+    q = visual.TextStim(win, text="Q", color="white", pos=pos, height=50)
+    q_stimuli.append(q)
+
+# Fixation point
+fixation = visual.TextStim(win, text="+", color="white", height=30)
+
+# Feedback text
+feedback = visual.TextStim(win, text="", color="white", pos=(0, -300), height=30)
+
+# Instructions
+instructions = visual.TextStim(
     win, 
-    text='Press the key matching the highlighted cue color location!\na=left, s=right, k=top, l=bottom\nPress space to start.', 
-    color='white'
+    text="Press 1, 2, 3, or 4 to respond to the Q at that location\n\nPress SPACE to start",
+    color="white",
+    height=25
 )
-instr.draw()
+
+# Show instructions
+instructions.draw()
 win.flip()
 event.waitKeys(keyList=['space'])
 
-n_trials = 5
-for trial in range(n_trials):
-    highlight_idx = random.randint(0, 3)
-    # Draw all cues
-    for idx, cue in enumerate(cues):
-        if idx == highlight_idx:
-            cue.lineColor = 'orange'
-            cue.lineWidth = 8
-        else:
-            cue.lineColor = 'white'
-            cue.lineWidth = 4
-        cue.draw()
+# Run 5 trials
+for trial in range(5):
+    # Show fixation
+    fixation.draw()
     win.flip()
-    rt_clock = core.Clock()
-    keys = event.waitKeys(keyList=cue_keys + ['escape'], timeStamped=rt_clock)
-    key, rt = keys[0]
-    if key == 'escape':
-        break
-    # Give brief feedback
-    feedback = visual.TextStim(win, text="Correct!" if key == cue_keys[highlight_idx] else "Wrong!", color='white')
+    core.wait(1.0)
+    
+    # Show all Q's
+    for q in q_stimuli:
+        q.draw()
+    win.flip()
+    
+    # Wait for response
+    event.clearEvents()
+    keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=5.0)
+    
+    if keys:
+        if 'escape' in keys:
+            break
+        
+        # Find which Q was selected
+        pressed_key = keys[0]
+        if pressed_key in response_keys:
+            q_index = response_keys.index(pressed_key)
+            feedback.text = f"Trial {trial+1}: Responded to Q at position {q_index+1} (key: {pressed_key})"
+        else:
+            feedback.text = f"Trial {trial+1}: No valid response"
+    else:
+        feedback.text = f"Trial {trial+1}: Timeout - no response"
+    
+    # Show feedback
     feedback.draw()
     win.flip()
-    core.wait(0.5)
+    core.wait(1.5)
+
+# End message
+end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=30)
+end_text.draw()
+win.flip()
+event.waitKeys()
 
 win.close()
 core.quit()
-
 
