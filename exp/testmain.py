@@ -1,5 +1,5 @@
 """
-Simple Multiple Cue Paradigm Demo
+Simple Multiple Cue Paradigm Demo with Reward System
 Multiple colored circles (cues) appear on screen at different locations.
 Press corresponding key to respond.
 """
@@ -7,10 +7,16 @@ from psychopy import logging
 
 logging.console.setLevel(logging.DEBUG)
 
+# Constants
+NUM_SESSIONS = 1
+NUM_TRIALS_PER_SESSION = 5
 MAX_WAIT_TIME = 5.0
 FIXATION_WAIT_TIME = 1.0
 FEEDBACK_WAIT_TIME = 1.5
-NUM_TRIALS = 5
+REWARD_MONEY_FACTOR = 0.1
+
+# Cue values: Cue 1=1pt, Cue 2=2pt, Cue 3=3pt, Cue 4=4pt
+CUE_VALUE = [1, 2, 3, 4]
 
 from psychopy import visual, core, event
 import random
@@ -45,15 +51,22 @@ for i, pos in enumerate(positions):
     text = visual.TextStim(win, text="", color=(-1, -1, -1), pos=pos, height=20, font='Arial Bold', bold=True)
     cue_stimuli.append((outer, inner, text))  # Store as tuple
 
-# Pre-generate reward locations and values for all trials
-reward_locations = [random.randint(0, 3) for _ in range(NUM_TRIALS)]  # Which position (0-3) gets reward
-reward_values = [random.randint(1, 4) for _ in range(NUM_TRIALS)]  # Reward value (1-4) for each trial
+# Pre-assign all reward values for all trials (all sessions)
+# For each trial, assign which cues are shown (1-4) and their values
+total_trials = NUM_SESSIONS * NUM_TRIALS_PER_SESSION
+trial_cues = []  # For each trial: list of which cues are shown (e.g., [1, 3] means cues 1 and 3)
+for _ in range(total_trials):
+    # Randomly select 1-2 cues to show per trial
+    num_cues = random.randint(1, 2)
+    cues = random.sample([1, 2, 3, 4], num_cues)
+    trial_cues.append(sorted(cues))
 
 # Fixation point
 fixation = visual.TextStim(win, text="+", color="white", height=30)
 
-# Feedback text
-feedback = visual.TextStim(win, text="", color="white", pos=(0, -300), height=30)
+# Feedback texts
+feedback1 = visual.TextStim(win, text="", color="white", pos=(0, 70), height=30)  # Expected/Max reward
+feedback2 = visual.TextStim(win, text="", color="white", pos=(0, -70), height=30)  # Cumulative reward
 
 # Instructions
 instructions = visual.TextStim(
@@ -71,53 +84,82 @@ event.waitKeys(keyList=['space'])
 # Create clock for response time measurement
 clock = core.Clock()
 
-# Run trials
-for trial in range(NUM_TRIALS):
-    # Show fixation
-    fixation.draw()
-    win.flip()
-    core.wait(FIXATION_WAIT_TIME)
+# Initialize cumulative reward
+cum_reward = 0.0
+trial_index = 0
+
+# Run sessions
+for session in range(NUM_SESSIONS):
+    # Reset cumulative reward at start of new session
+    if session > 0:
+        cum_reward = 0.0
     
-    # Reset clock before showing cues
-    clock.reset()
-    
-    # Clear all texts, then set reward value only at selected location
-    for outer, inner, text in cue_stimuli:
-        text.setText("")  # Clear all texts
-    cue_stimuli[reward_locations[trial]][2].setText(str(reward_values[trial]))  # Set reward at selected location
-    
-    # Show all cues and record presentation time
-    for outer, inner, text in cue_stimuli:
-        outer.draw()  # Draw colored outer circle
-        inner.draw()   # Draw white inner circle
-        text.draw()    # Draw reward number (only one will have text)
-    win.flip()
-    cue_time = clock.getTime()  # Record when cues appear (should be ~0)
-    
-    # Wait for response
-    event.clearEvents()
-    keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
-    
-    # print(keys)
-    if keys:
-        pressed_key = keys[0][0]  # Key name
-        response_time = keys[0][1]  # Response time timestamp
+    # Run trials in this session
+    for trial_in_session in range(NUM_TRIALS_PER_SESSION):
+        # Get pre-assigned cues for this trial
+        cues_shown = trial_cues[trial_index]
         
-        # Check for escape key
-        if pressed_key == 'escape':
-            break
+        # Show fixation
+        fixation.draw()
+        win.flip()
+        core.wait(FIXATION_WAIT_TIME)
         
-        rt = (response_time - cue_time) * 1000  # RT in milliseconds
-        cue_index = response_keys.index(pressed_key)
-        feedback.text = f"Trial {trial+1}: Position {cue_index+1} (key: {pressed_key})\nRT: {rt:.1f} ms"
-    else:
-        feedback.text = f"Trial {trial+1}: Timeout - no response"
-    
-    # Show feedback
-    feedback.pos = (0, 0)  # Ensure feedback is centered
-    feedback.draw()
-    win.flip()
-    core.wait(FEEDBACK_WAIT_TIME)
+        # Reset clock before showing cues
+        clock.reset()
+        
+        # Set reward numbers in circles (always show 1, 2, 3, 4 in each circle)
+        for i, (outer, inner, text) in enumerate(cue_stimuli):
+            text.setText(str(CUE_VALUE[i]))  # Show reward value (1, 2, 3, or 4)
+        
+        # Show all cues and record presentation time
+        for outer, inner, text in cue_stimuli:
+            outer.draw()  # Draw colored outer circle
+            inner.draw()   # Draw white inner circle
+            text.draw()    # Draw reward number
+        win.flip()
+        cue_time = clock.getTime()  # Record when cues appear
+        
+        # Wait for response
+        event.clearEvents()
+        keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
+        
+        # Calculate rewards
+        expected_reward = sum(CUE_VALUE[c - 1] for c in cues_shown)
+        max_reward = max(CUE_VALUE[c - 1] for c in cues_shown)
+        actual_reward = 0
+        
+        if keys:
+            pressed_key = keys[0][0]  # Key name
+            response_time = keys[0][1]  # Response time timestamp
+            
+            # Check for escape key
+            if pressed_key == 'escape':
+                break
+            
+            rt = (response_time - cue_time) * 1000  # RT in milliseconds
+            selected_cue = response_keys.index(pressed_key) + 1  # Cue number (1-4)
+            
+            # Check if selected cue was shown
+            if selected_cue in cues_shown:
+                actual_reward = CUE_VALUE[selected_cue - 1]
+        else:
+            rt = MAX_WAIT_TIME * 1000  # Timeout
+        
+        # Update cumulative reward
+        cum_reward += actual_reward * REWARD_MONEY_FACTOR
+        cum_reward = round(cum_reward, 2)
+        
+        # Show feedback
+        feedback1.text = f"{expected_reward} / {max_reward}"
+        feedback1.color = "red" if actual_reward == 0 else "green"
+        feedback2.text = f"{cum_reward:.2f}"
+        
+        feedback1.draw()
+        feedback2.draw()
+        win.flip()
+        core.wait(FEEDBACK_WAIT_TIME)
+        
+        trial_index += 1
 
 # End message
 end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=30)
