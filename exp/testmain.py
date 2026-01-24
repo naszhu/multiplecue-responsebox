@@ -52,14 +52,24 @@ for i, pos in enumerate(positions):
     cue_stimuli.append((outer, inner, text))  # Store as tuple
 
 # Pre-assign all reward values for all trials (all sessions)
-# For each trial, assign which cues are shown (1-4) and their values
+# For each trial, assign which cues appear at which positions
 total_trials = NUM_SESSIONS * NUM_TRIALS_PER_SESSION
-trial_cues = []  # For each trial: list of which cues are shown (e.g., [1, 3] means cues 1 and 3)
+trial_cue_positions = []  # For each trial: dict mapping position_index -> cue_number (or None)
 for _ in range(total_trials):
     # Randomly select 1-2 cues to show per trial
     num_cues = random.randint(1, 2)
     cues = random.sample([1, 2, 3, 4], num_cues)
-    trial_cues.append(sorted(cues))
+    # Randomly assign these cues to positions (0-3)
+    available_positions = random.sample([0, 1, 2, 3], num_cues)
+    # Create mapping: position -> cue_number
+    position_to_cue = {}
+    for pos_idx in range(4):
+        if pos_idx in available_positions:
+            cue_idx = available_positions.index(pos_idx)
+            position_to_cue[pos_idx] = cues[cue_idx]
+        else:
+            position_to_cue[pos_idx] = None  # No cue at this position
+    trial_cue_positions.append(position_to_cue)
 
 # Fixation point
 fixation = visual.TextStim(win, text="+", color="white", height=30)
@@ -96,8 +106,11 @@ for session in range(NUM_SESSIONS):
     
     # Run trials in this session
     for trial_in_session in range(NUM_TRIALS_PER_SESSION):
-        # Get pre-assigned cues for this trial
-        cues_shown = trial_cues[trial_index]
+        # Get pre-assigned position-to-cue mapping for this trial
+        position_to_cue = trial_cue_positions[trial_index]
+        
+        # Get list of cues shown in this trial (for reward calculation)
+        cues_shown = [cue for cue in position_to_cue.values() if cue is not None]
         
         # Show fixation
         fixation.draw()
@@ -107,15 +120,19 @@ for session in range(NUM_SESSIONS):
         # Reset clock before showing cues
         clock.reset()
         
-        # Set reward numbers in circles (always show 1, 2, 3, 4 in each circle)
-        for i, (outer, inner, text) in enumerate(cue_stimuli):
-            text.setText(str(CUE_VALUE[i]))  # Show reward value (1, 2, 3, or 4)
+        # Set reward numbers in circles (only show numbers at positions where cues are assigned)
+        for pos_idx, (outer, inner, text) in enumerate(cue_stimuli):
+            cue_num = position_to_cue[pos_idx]  # Get cue number at this position (or None)
+            if cue_num is not None:
+                text.setText(str(CUE_VALUE[cue_num - 1]))  # Show reward value for this cue
+            else:
+                text.setText("")  # No cue at this position, no number
         
         # Show all cues and record presentation time
         for outer, inner, text in cue_stimuli:
             outer.draw()  # Draw colored outer circle
             inner.draw()   # Draw white inner circle
-            text.draw()    # Draw reward number
+            text.draw()    # Draw reward number (only if cue is shown at this position)
         win.flip()
         cue_time = clock.getTime()  # Record when cues appear
         
@@ -123,8 +140,7 @@ for session in range(NUM_SESSIONS):
         event.clearEvents()
         keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
         
-        # Calculate rewards
-        expected_reward = sum(CUE_VALUE[c - 1] for c in cues_shown)
+        # Calculate max reward (highest cue value among cues shown in this trial)
         max_reward = max(CUE_VALUE[c - 1] for c in cues_shown)
         actual_reward = 0
         
@@ -137,10 +153,12 @@ for session in range(NUM_SESSIONS):
                 break
             
             rt = (response_time - cue_time) * 1000  # RT in milliseconds
-            selected_cue = response_keys.index(pressed_key) + 1  # Cue number (1-4)
+            selected_position = response_keys.index(pressed_key)  # Position index (0-3)
+            selected_cue = position_to_cue[selected_position]  # Get cue number at selected position
             
-            # Check if selected cue was shown
-            if selected_cue in cues_shown:
+            # Calculate actual reward: value of the cue at the selected position
+            # Only give reward if the selected position has a cue (was shown in this trial)
+            if selected_cue is not None and selected_cue in cues_shown:
                 actual_reward = CUE_VALUE[selected_cue - 1]
         else:
             rt = MAX_WAIT_TIME * 1000  # Timeout
@@ -149,8 +167,8 @@ for session in range(NUM_SESSIONS):
         cum_reward += actual_reward * REWARD_MONEY_FACTOR
         cum_reward = round(cum_reward, 2)
         
-        # Show feedback
-        feedback1.text = f"{expected_reward} / {max_reward}"
+        # Show feedback: ActualReward / MaxReward
+        feedback1.text = f"{actual_reward} / {max_reward}"
         feedback1.color = "red" if actual_reward == 0 else "green"
         feedback2.text = f"{cum_reward:.2f}"
         
