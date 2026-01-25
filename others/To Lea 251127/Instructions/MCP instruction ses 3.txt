@@ -1,0 +1,10 @@
+PRACTICE 3
+
+The procedure remains the same. However, you will feel that the task becomes more difficult because the cues and letters are shown only briefly in some of the trials. 
+
+Try nevertheless to identify the location of the cued letters as well as you can, and try to collect as many points as you can by reporting the letter that gives you the highest reward.
+__________
+
+Remember to keep fixating the red point in the center. In case you make an eye movement, you will not be able to earn money for the reported letter. 
+
+Press *space* to begin.

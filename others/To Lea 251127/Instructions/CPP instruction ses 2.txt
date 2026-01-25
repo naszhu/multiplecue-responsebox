@@ -1,0 +1,10 @@
+PRACTICE 2
+
+The procedure remains the same. However, several cues will be presented in some of the trials. 
+
+Try to collect as many points as possible by looking at the green dot that gives the highest reward. 
+__________
+
+Remember to keep fixating at the red point at the start of each trial. In case you make an eye movement before, you will not be able to earn money for looking at the green dot. 
+
+Press *space* to begin.

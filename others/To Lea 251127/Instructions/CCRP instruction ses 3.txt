@@ -1,0 +1,12 @@
+PRACTICE 3
+
+The procedure remains the same as in Session 2. However, now two cue digits may appear. 
+
+You should try to response to the circle with the highest digit to earn as many points as possible. But you will also be rewarded if you respond with the color of circle with the lower digit.
+
+Try to collect as many points as possible. 
+__________
+
+Remember to keep fixating at the black point at the start of each trial. 
+
+Press *space* to begin.

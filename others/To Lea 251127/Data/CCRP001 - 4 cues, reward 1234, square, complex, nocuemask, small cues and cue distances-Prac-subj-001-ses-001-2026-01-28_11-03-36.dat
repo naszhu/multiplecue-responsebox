@@ -1,0 +1,87 @@
+PsychoPy version: 2025.2.3
+Experimental Program: IntentionSelectionParadigmPyExp251118a.py
+Experiment Name: CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances
+Experiment Type: 3
+Exp start time: 2026-01-28_11-03-36
+
+Subject: 1
+Age: 0
+Gender: NA
+
+Practice: Y
+Session: 1
+Number of Blocks: 5
+Repetitions: 5
+Total number of trials: 112
+Warmup trials 1st block: 4
+Warmup trials other blocks: 2
+
+Cue values: [1, 2, 3, 4]
+Cue Symbols: [1, 2, 3, 4]
+Number of cue conditions: 10
+Cue sets: [[1], [2], [3], [4]]
+CueValue sets: [[1], [2], [3], [4]]
+Reward Money Factor: 0.1
+Cue SOA set: [200]
+Letter stimuli ED: 200
+Mask ED: 50
+
+Full screen: Y
+Fixed refreshRate: 100
+Measured refreshRate: 60.0082122597306
+Test refreshrate: N
+
+Eye tracker: none
+Number blocks between drift corrections (0 = no drift correction): 1
+Maximum number of eye movement samples: 0
+
+Offset trial start jitter time: 1.0
+Mean trial start jitter time: 0.5
+Max trial start jitter time: 5.0
+
+Response keys: ['Z', 'X', '.', '-']
+Response deadline: 2.0
+
+Monitor name: OF2A_03_5_513_lab5
+Monitor set size: [1920, 1080] pixels
+Monitor actual size: [1920 1080] pixels
+Monitor width: 52 cm
+Monitor distance: 60 cm
+
+Stimulus scale factor: 0.04
+Fixation size: 0.16 deg, 0.17 mm, 6.19 pixels
+Fixation area size: 4.0 deg, 4.19 mm, 154.68 pixels
+Cue size: 0.7 deg, 0.73 mm, 27.07 pixels
+Cue text size: 0.5599999999999999 deg, 0.59 mm, 21.65 pixels
+Cue distance: 2.0 deg, 2.09 mm, 77.34 pixels
+Target distance: 2.0 deg, 2.09 mm, 77.34 pixels
+Letter size: 2.4 deg, 2.51 mm, 92.81 pixels
+Point target size: 0.4 deg, 0.42 mm, 15.47 pixels
+Point target area size: 1.2 deg, 1.26 mm, 46.40 pixels
+Color target size: 0.8 deg, 0.84 mm, 30.94 pixels
+Mask size X: 3.2 deg, 3.35 mm, 123.74 pixels
+Mask size Y: 3.2 deg, 3.35 mm, 123.74 pixels
+Feedback letter size: 2.0 deg, 2.09 mm, 77.34 pixels
+Response letter size: 2.4 deg, 2.51 mm, 92.81 pixels
+Background color: (0, 0, 0)
+Eye tracker calibration/validation background color: (0, 0, 0)
+Cue background color: (1, 1, 1)
+Cue text color: (-1, -1, -1)
+Cue box shape: circle
+Cue arrow color: (1, -1, -1)
+Letter color: (1, 1, 1)
+Letter contrast: 1.0
+Stimulus opacity: 1.0
+Stimulus target colors: 1234
+Stimulus target RGB color values: [(1, -1, -1), (-1, 1, -1), (-1, -1, 1), (1, 1, -1)]
+Color target edgecolor: (-1, -1, -1)
+
+
+ExperimentName	ExperimentNumber	Subject	Session	Block	Trial	WarmUpTrial	CueCondition	Condition	NoCues	TrialStartJitterTime	CueSOA	Cues	CueValues	CueRanks	LetterContrast	EDletters	T	C	R	RespLoc	PointTargetResponse	RT	LateResponse	ACC	INTR	ERR	CueResponseValue	CueResponseExpValue	CueRankResponse	ExpectedReward	Reward	MaxReward	CumReward	Saccade	CueGazeX	CueGazeY	LetterGazeX	LetterGazeY	MaskGazeX	MaskGazeY	TargetGazeX	TargetGazeY	DriftCorrectX	DriftCorrectY	RefreshRate	MeasuredRefreshRate	mEDcues	mEDletters	mEDmasks	CueTime	CueMaskTime	StimTime	MaskTime	PointTargetTime	ColorTargetTime	EndTrialTime	EyeOffsetTime	Note	NumberEyeSamples	
+CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances	2001	1	1	1	1	1	2	2	1	2.258279327610704	200	2000	2000	1444	1.0	200	-	1234	2	0000	0	2.0957014560699463	False	0	0	0	0	0	0	0	0	2	0.0	False	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0	0	100	60.0082122597306	0.0	0.0	0.0	101.83874559402466	0.0	0.0	0.0	0.0	103.9344470500946	103.9344539642334	0.0		0	
+CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances	2001	1	1	1	2	1	2	2	1	1.0831845626679262	200	0020	0020	4414	1.0	200	-	3421	2	0000	0	4.947170257568359	False	0	0	0	0	0	0	0	0	2	0.0	False	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0	0	100	60.0082122597306	0.0	0.0	0.0	106.15540385246277	0.0	0.0	0.0	0.0	111.10257411003113	111.10258030891418	0.0		0	
+CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances	2001	1	1	1	3	1	3	3	1	1.2100015471915218	200	0003	0003	4441	1.0	200	-	1243	N	0000	0	0.08854866027832031	False	0	0	0	0	0	0	0	0	3	0.0	False	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0	0	100	60.0082122597306	0.0	0.0	0.0	113.43895220756531	0.0	0.0	0.0	0.0	113.52750086784363	113.52750730514526	0.0		0	
+CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances	2001	1	1	1	4	1	1	1	1	3.1316064173015903	200	0010	0010	4414	1.0	200	-	1432	H	0000	0	0.4299190044403076	False	0	0	0	0	0	0	0	0	1	0.0	False	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0	0	100	60.0082122597306	0.0	0.0	0.0	117.7887454032898	0.0	0.0	0.0	0.0	118.2186644077301	118.21867108345032	0.0		0	
+CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances	2001	1	1	1	5	0	2	2	1	1.310753519140027	200	0002	0002	4441	1.0	200	-	1342	L	0000	0	5.945154428482056	False	0	0	0	0	0	0	0	0	2	0.0	False	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0	0	100	60.0082122597306	0.0	0.0	0.0	120.6556408405304	0.0	0.0	0.0	0.0	126.60079526901245	126.60080194473267	0.0		0	
+CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances	2001	1	1	1	6	0	4	4	1	1.3694028485678023	200	0040	0040	4414	1.0	200	-	1234	3	0000	0	21.746625661849976	False	0	0	0	0	0	0	0	0	4	0.0	False	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0	0	100	60.0082122597306	0.0	0.0	0.0	129.10543060302734	0.0	0.0	0.0	0.0	150.85205626487732	150.8520631790161	0.0		0	
+CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances	2001	1	1	1	7	0	2	2	1	1.647798126540613	200	0002	0002	4441	1.0	200	-	2143	ESCAPE	0000	0	3.4902844429016113	False	0	0	0	0	0	0	0	0	2	0.0	False	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0	0	100	60.0082122597306	0.0	0.0	0.0	153.62279391288757	0.0	0.0	0.0	0.0	157.11307835578918	157.11308455467224	0.0	Trial_escape;	0	

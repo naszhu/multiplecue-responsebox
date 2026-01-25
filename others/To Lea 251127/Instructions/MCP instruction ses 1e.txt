@@ -1,0 +1,24 @@
+PRACTICE 1
+
+In the following, you will see a red point in the center of the display. Please always fixate this point. 
+
+Upon pressing *space*, eight squares will appear in the center of the display. In one of these squares, you will see one of the following symbols: %, &, and @. This is a cue indicating the location of a particular letter that will subsequently appear among seven other letters around the center of the display.
+
+Red lines between the squares and letters show the relations between them.
+__________
+
+Your task is to report the cued letter. Please turn to the experimenter who will explain the location rules of the cued letters to you.
+
+You report the cued letter by typing it on the keyboard. Guess if you are unsure. You can use *backspace* to correct.
+__________
+
+You will earn points for correctly reporting the cued letter. The number of points you can earn is dependent on the associated symbol (%, &, or @). The number of points varies randomly from 0 to 3.
+
+Your collected points will be translated into a monetary reward that is added to your compensation payment. After each trial, you will see how many points you have earned in that trial along with the amount of money in DKK that you have obtained.
+
+The number of points you have earned is colored GREEN if it is 1-3. If you report the cued letter correctly but the reward is 0, it is printed in RED. Otherwise, the 0 is printed in WHITE.
+__________
+
+Remember to keep fixating the red point in the center. If you make an eye movement, you will still receive feedback on your performance. However, the collected points will not be added to your final monetary reward.  
+
+Press *space* to begin.
