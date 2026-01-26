@@ -1,0 +1,12 @@
+PRACTICE 4
+
+This last training session resembles the following test sessions. The procedure remains the same, but the task will feel even more difficult because the letters are shown for a much shorter amount of time before they are masked. 
+__________
+
+The red lines indicating the link between the squares and  letters will not be shown in this session nor in the experimental sessions that follow.
+__________
+
+The task is difficult, so it is normal to make errors. Try nevertheless to collect as many points as you can by reporting the letter that gives you the highest reward. 
+__________
+
+Press *space* to begin.

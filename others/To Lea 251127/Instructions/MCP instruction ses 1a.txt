@@ -1,0 +1,22 @@
+PRACTICE 1
+
+In the following, you will see a red point in the center of the display. Please always fixate this point. 
+
+Upon pressing *space*, four squares will appear in the center of the display. In one of these squares, you will see a digit from 1 to 4. This is a cue indicating the location of a particular letter that will subsequently appear among three other letters around the center of the display.
+
+Red lines between the squares and letters show the relations.
+__________
+
+Your task is to report the cued letter. Please turn to the experimenter who will explain the location rules of the cued letters to you.
+
+You report the cued letter by typing it on the keyboard guessing when unsure. You can use *backspace* to correct.
+__________
+
+You will earn points for correctly reporting the cued letter. The number of points you can earn is dependent on the associated cue. The digit 1 allows you to earn 1 point, and so on until a maximum reward of 4 points per trial. 
+
+Your collected points will be translated into a monetary reward that is added to your compensation payment. After each trial, you will see how many points you have earned in that trial relative to what you could have earned, along with the amount of money in DKK that you have obtained.
+__________
+
+Remember to keep fixating the red point in the center. If you make an eye movement, you will still receive feedback on your performance. However, the collected points will not be added to your final monetary reward.  
+
+Press *space* to begin.

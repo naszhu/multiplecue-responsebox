@@ -1,0 +1,12 @@
+PRACTICE 4
+
+This last training session resembles the following test sessions. The procedure remains the same. 
+__________
+
+The red lines indicating the link between the squares and green dots will not be shown in this session nor in the experimental sessions that follow.
+__________
+
+The task is difficult. Try nevertheless to collect as many points as you can by looking at the green dot that gives you the highest reward. 
+__________
+
+Press *space* to begin.
