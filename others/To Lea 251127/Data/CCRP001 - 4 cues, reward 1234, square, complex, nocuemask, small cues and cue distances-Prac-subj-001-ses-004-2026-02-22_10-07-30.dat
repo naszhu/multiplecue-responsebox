@@ -1,0 +1,82 @@
+PsychoPy version: 2025.2.3
+Experimental Program: IntentionSelectionParadigmPyExp251118a.py
+Experiment Name: CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances
+Experiment Type: 3
+Exp start time: 2026-02-22_10-07-30
+
+Subject: 1
+Age: 0
+Gender: NA
+
+Practice: Y
+Session: 4
+Number of Blocks: 2
+Repetitions: 3
+Total number of trials: 66
+Warmup trials 1st block: 4
+Warmup trials other blocks: 2
+
+Cue values: [1, 2, 3, 4]
+Cue Symbols: [1, 2, 3, 4]
+Number of cue conditions: 10
+Cue sets: [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]]
+CueValue sets: [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]]
+Reward Money Factor: 0.1
+Cue SOA set: [200]
+Letter stimuli ED: 200
+Mask ED: 50
+
+Full screen: Y
+Fixed refreshRate: 100
+Measured refreshRate: 59.74766489601896
+Test refreshrate: N
+
+Eye tracker: none
+Number blocks between drift corrections (0 = no drift correction): 1
+Maximum number of eye movement samples: 0
+
+Offset trial start jitter time: 1.0
+Mean trial start jitter time: 0.5
+Max trial start jitter time: 5.0
+
+Response keys: ['Z', 'X', '.', '-']
+Response deadline: 2.0
+
+Monitor name: OF2A_03_5_513_lab5
+Monitor set size: [1920, 1080] pixels
+Monitor actual size: [1920 1080] pixels
+Monitor width: 52 cm
+Monitor distance: 60 cm
+
+Stimulus scale factor: 0.04
+Fixation size: 0.16 deg, 0.17 mm, 6.19 pixels
+Fixation area size: 4.0 deg, 4.19 mm, 154.68 pixels
+Cue size: 0.7 deg, 0.73 mm, 27.07 pixels
+Cue text size: 0.5599999999999999 deg, 0.59 mm, 21.65 pixels
+Cue distance: 2.0 deg, 2.09 mm, 77.34 pixels
+Target distance: 2.0 deg, 2.09 mm, 77.34 pixels
+Letter size: 2.4 deg, 2.51 mm, 92.81 pixels
+Point target size: 0.4 deg, 0.42 mm, 15.47 pixels
+Point target area size: 1.2 deg, 1.26 mm, 46.40 pixels
+Color target size: 0.8 deg, 0.84 mm, 30.94 pixels
+Mask size X: 3.2 deg, 3.35 mm, 123.74 pixels
+Mask size Y: 3.2 deg, 3.35 mm, 123.74 pixels
+Feedback letter size: 2.0 deg, 2.09 mm, 77.34 pixels
+Response letter size: 2.4 deg, 2.51 mm, 92.81 pixels
+Background color: (0, 0, 0)
+Eye tracker calibration/validation background color: (0, 0, 0)
+Cue background color: (1, 1, 1)
+Cue text color: (-1, -1, -1)
+Cue box shape: circle
+Cue arrow color: (0, 0, 0)
+Letter color: (1, 1, 1)
+Letter contrast: 1.0
+Stimulus opacity: 1.0
+Stimulus target colors: 1234
+Stimulus target RGB color values: [(1, -1, -1), (-1, 1, -1), (-1, -1, 1), (1, 1, -1)]
+Color target edgecolor: (-1, -1, -1)
+
+
+ExperimentName	ExperimentNumber	Subject	Session	Block	Trial	WarmUpTrial	CueCondition	Condition	NoCues	TrialStartJitterTime	CueSOA	Cues	CueValues	CueRanks	LetterContrast	EDletters	T	C	R	RespLoc	PointTargetResponse	RT	LateResponse	ACC	INTR	ERR	CueResponseValue	CueResponseExpValue	CueRankResponse	ExpectedReward	Reward	MaxReward	CumReward	Saccade	CueGazeX	CueGazeY	LetterGazeX	LetterGazeY	MaskGazeX	MaskGazeY	TargetGazeX	TargetGazeY	DriftCorrectX	DriftCorrectY	RefreshRate	MeasuredRefreshRate	mEDcues	mEDletters	mEDmasks	CueTime	CueMaskTime	StimTime	MaskTime	PointTargetTime	ColorTargetTime	EndTrialTime	EyeOffsetTime	Note	NumberEyeSamples	
+CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances	2001	1	4	1	1	1	9	9	2	3.2954240274370012	200	2004	2004	2441	1.0	200	-	2134	TAB	0000	0	9.266243696212769	False	0	0	0	0	0	0	0	0	4	0.0	False	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0	0	100	59.74766489601896	0.0	0.0	0.0	35.860565423965454	0.0	0.0	0.0	0.0	45.12680912017822	45.12681722640991	0.0		0	
+CCRP001 - 4 cues, reward 1234, square, complex, nocuemask, small cues and cue distances	2001	1	4	1	2	1	6	6	2	1.5926894151679787	200	3001	3001	1442	1.0	200	-	1342	S	0000	0	22.295371055603027	False	0	0	0	0	0	0	0	0	3	0.0	False	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0	0	100	59.74766489601896	0.0	0.0	0.0	47.86036968231201	0.0	0.0	0.0	0.0	70.15574073791504	70.15574884414673	0.0		0	

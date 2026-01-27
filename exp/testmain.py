@@ -42,17 +42,41 @@ CUE_OUTER_RADIUS_DEG = 0.8   # ColorTargetSize
 CUE_INNER_RADIUS_DEG = 0.35  # CueBoxSize/2
 CUE_TEXT_HEIGHT_DEG = 0.56   # CueTextSize
 FIXATION_SIZE_DEG = 0.16     # FixationSize = 4*StimFactor
+FEEDBACK_LETTER_SIZE_DEG = 2.0   # FeedbackLetterSize = 50*StimFactor
+FEEDBACK2_POS_DEG = (0, -2.8)    # pos=(0, -70*StimFactor)
+INSTRUCTION_LETTER_SIZE_DEG = 0.6  # InstructionLetterSize = 15*StimFactor
+
+# Display / monitor (match paradigm exactly)
+WIN_SIZE_PIX = (1920, 1080)
+MONITOR_NAME = "OF2A_03_5_513_lab5"
+MONITOR_WIDTH_CM = 52
+MONITOR_DISTANCE_CM = 60
+USE_UNITS = "deg"
+USE_COLOR_SPACE = "rgb"
+MULTI_SAMPLE = True   # Anti-aliasing for smooth edges (paradigm has smooth circles)
+NUM_SAMPLES = 4      # Samples per pixel when multiSample enabled
+CIRCLE_EDGES = 200   # Paradigm uses edges=200 for smooth circles (default ~32 is jagged)
 
 # Cue values: Cue 1=1pt, Cue 2=2pt, Cue 3=3pt, Cue 4=4pt
 CUE_VALUE = [1, 2, 3, 4]
 
-# Create window in deg to match paradigm (monitor: 52 cm width, 60 cm distance)
-mon = monitors.Monitor("default")
-mon.setWidth(52)
-mon.setDistance(60)
-mon.setSizePix((1920, 1080))
-# win = visual.Window(size=[800, 600], fullscr=False, color=BG_COLOR, units="deg", monitor=mon)
-win = visual.Window(size=[1920, 1080], fullscr=False, color=BG_COLOR, units="deg", monitor=mon)
+# Create window matching paradigm display settings
+mon = monitors.Monitor(MONITOR_NAME)
+mon.setSizePix(WIN_SIZE_PIX)
+mon.setWidth(MONITOR_WIDTH_CM)
+mon.setDistance(MONITOR_DISTANCE_CM)
+mon.saveMon()
+win = visual.Window(
+    size=WIN_SIZE_PIX,
+    fullscr=False,
+    allowGUI=True,
+    units=USE_UNITS,
+    colorSpace=USE_COLOR_SPACE,
+    monitor=MONITOR_NAME,
+    color=BG_COLOR,
+    multiSample=MULTI_SAMPLE,
+    numSamples=NUM_SAMPLES,
+)
 
 # Define cue positions (4 locations, from POSITIONS_DEG)
 positions = POSITIONS_DEG
@@ -66,8 +90,8 @@ cue_colors = STIMULUS_TARGET_COLORS_RGB
 # Create donut-shaped cues (colored outer circle with white inner circle)
 cue_stimuli = []  # list of tuples (outer, inner, text)
 for i, pos in enumerate(positions):
-    outer = visual.Circle(win, radius=CUE_OUTER_RADIUS_DEG, fillColor=cue_colors[i], lineColor=None, pos=pos)
-    inner = visual.Circle(win, radius=CUE_INNER_RADIUS_DEG, fillColor=CUE_BG_COLOR, lineColor=None, pos=pos)
+    outer = visual.Circle(win, radius=CUE_OUTER_RADIUS_DEG, fillColor=cue_colors[i], lineColor=None, pos=pos, edges=CIRCLE_EDGES)
+    inner = visual.Circle(win, radius=CUE_INNER_RADIUS_DEG, fillColor=CUE_BG_COLOR, lineColor=None, pos=pos, edges=CIRCLE_EDGES)
     text = visual.TextStim(win, text="", color=CUE_TEXT_COLOR, pos=pos, height=CUE_TEXT_HEIGHT_DEG, font='Arial Bold', bold=True)
     cue_stimuli.append((outer, inner, text))  # Store as tuple
 
@@ -94,16 +118,16 @@ for _ in range(total_trials):
 # Fixation point
 fixation = visual.TextStim(win, text="+", color="white", height=FIXATION_SIZE_DEG)
 
-# Feedback texts (pos and height in deg)
-feedback1 = visual.TextStim(win, text="", color="white", pos=(0, 2), height=0.5)  # Expected/Max reward
-feedback2 = visual.TextStim(win, text="", color="white", pos=(0, -2), height=0.5)  # Cumulative reward
+# Feedback texts (match paradigm: Feedback1 at (0,0), Feedback2 at (0,-70*StimFactor))
+feedback1 = visual.TextStim(win, text="", color="white", pos=(0, 0), height=FEEDBACK_LETTER_SIZE_DEG)
+feedback2 = visual.TextStim(win, text="", color="white", pos=FEEDBACK2_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.6)
 
-# Instructions
+# Instructions (InstructionLetterSize = 15*StimFactor)
 instructions = visual.TextStim(
     win,
     text="Press 1, 2, 3, or 4 to respond to the cue at that location\n\nPress SPACE to start",
     color="white",
-    height=0.4
+    height=INSTRUCTION_LETTER_SIZE_DEG,
 )
 
 # Show instructions
@@ -200,7 +224,7 @@ for session in range(NUM_SESSIONS):
         trial_index += 1
 
 # End message
-end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=0.5)
+end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=FEEDBACK_LETTER_SIZE_DEG)
 end_text.draw()
 win.flip()
 event.waitKeys()
