@@ -3,11 +3,13 @@ Simple Multiple Cue Paradigm Demo with Reward System
 Multiple colored circles (cues) appear on screen at different locations.
 Press corresponding key to respond.
 """
-from psychopy import logging
+import math
+import random
+from psychopy import logging, visual, core, event, monitors
 
 logging.console.setLevel(logging.DEBUG)
 
-# Constants
+# Constants (defaults from IntentionSelectionParadigmPyExp251118a colored-cue paradigm)
 NUM_SESSIONS = 1
 NUM_TRIALS_PER_SESSION = 5
 MAX_WAIT_TIME = 5.0
@@ -15,40 +17,58 @@ FIXATION_WAIT_TIME = 1.0
 FEEDBACK_WAIT_TIME = 1.5
 REWARD_MONEY_FACTOR = 0.1
 
+# Stimulus colors RGB (-1 to 1): Red, Green, Blue, Yellow
+STIMULUS_TARGET_COLORS_RGB = [(1, -1, -1), (-1, 1, -1), (-1, -1, 1), (1, 1, -1)]
+CUE_TEXT_COLOR = (-1, -1, -1)
+CUE_BG_COLOR = (1, 1, 1)
+BG_COLOR = (0, 0, 0)
+
+# Cue positions (x, y) in deg: 4 locations at 2 deg, rotation 45° (TargetDistance=2, TargetLocRotation=pi/4)
+TARGET_DISTANCE_DEG = 2.0
+TARGET_LOC_ROTATION_RAD = math.pi / 4
+POSITIONS_DEG = [
+    (TARGET_DISTANCE_DEG * math.cos(0 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD),
+     TARGET_DISTANCE_DEG * math.sin(0 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD)),
+    (TARGET_DISTANCE_DEG * math.cos(1 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD),
+     TARGET_DISTANCE_DEG * math.sin(1 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD)),
+    (TARGET_DISTANCE_DEG * math.cos(2 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD),
+     TARGET_DISTANCE_DEG * math.sin(2 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD)),
+    (TARGET_DISTANCE_DEG * math.cos(3 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD),
+     TARGET_DISTANCE_DEG * math.sin(3 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD)),
+]
+
+# Stimulus sizes (deg): ColorTargetSize=0.8 radius, CueBoxSize/2=0.35, CueTextSize=0.56 (StimFactor=0.04, CueScaleFactor=0.7)
+CUE_OUTER_RADIUS_DEG = 0.8   # ColorTargetSize
+CUE_INNER_RADIUS_DEG = 0.35  # CueBoxSize/2
+CUE_TEXT_HEIGHT_DEG = 0.56   # CueTextSize
+FIXATION_SIZE_DEG = 0.16     # FixationSize = 4*StimFactor
+
 # Cue values: Cue 1=1pt, Cue 2=2pt, Cue 3=3pt, Cue 4=4pt
 CUE_VALUE = [1, 2, 3, 4]
 
-from psychopy import visual, core, event
-import random
+# Create window in deg to match paradigm (monitor: 52 cm width, 60 cm distance)
+mon = monitors.Monitor("default")
+mon.setWidth(52)
+mon.setDistance(60)
+mon.setSizePix((1920, 1080))
+# win = visual.Window(size=[800, 600], fullscr=False, color=BG_COLOR, units="deg", monitor=mon)
+win = visual.Window(size=[1920, 1080], fullscr=False, color=BG_COLOR, units="deg", monitor=mon)
 
-# Create window
-win = visual.Window(size=[800, 600], fullscr=False, color="black", units="pix")
-
-# Define cue positions (4 locations)
-positions = [
-    (-200, 200),   # Top-left
-    (200, 200),    # Top-right
-    (-200, -200),  # Bottom-left
-    (200, -200)    # Bottom-right
-]
+# Define cue positions (4 locations, from POSITIONS_DEG)
+positions = POSITIONS_DEG
 
 # Response keys corresponding to each position
 response_keys = ['1', '2', '3', '4']
 
-# Colors for each cue (RGB values from -1 to 1)
-cue_colors = [
-    (1, 0, 0),    # Red
-    (0, 1, 0),    # Green
-    (0, 0, 1),    # Blue
-    (1, 1, 0)     # Yellow
-]
+# Colors for each cue (from paradigm StimulusTargetColorsRGB)
+cue_colors = STIMULUS_TARGET_COLORS_RGB
 
 # Create donut-shaped cues (colored outer circle with white inner circle)
 cue_stimuli = []  # list of tuples (outer, inner, text)
 for i, pos in enumerate(positions):
-    outer = visual.Circle(win, radius=30, fillColor=cue_colors[i], lineColor=None, pos=pos)
-    inner = visual.Circle(win, radius=15, fillColor=(1, 1, 1), lineColor=None, pos=pos)  # White inner circle
-    text = visual.TextStim(win, text="", color=(-1, -1, -1), pos=pos, height=20, font='Arial Bold', bold=True)
+    outer = visual.Circle(win, radius=CUE_OUTER_RADIUS_DEG, fillColor=cue_colors[i], lineColor=None, pos=pos)
+    inner = visual.Circle(win, radius=CUE_INNER_RADIUS_DEG, fillColor=CUE_BG_COLOR, lineColor=None, pos=pos)
+    text = visual.TextStim(win, text="", color=CUE_TEXT_COLOR, pos=pos, height=CUE_TEXT_HEIGHT_DEG, font='Arial Bold', bold=True)
     cue_stimuli.append((outer, inner, text))  # Store as tuple
 
 # Pre-assign all reward values for all trials (all sessions)
@@ -72,18 +92,18 @@ for _ in range(total_trials):
     trial_cue_positions.append(position_to_cue)
 
 # Fixation point
-fixation = visual.TextStim(win, text="+", color="white", height=30)
+fixation = visual.TextStim(win, text="+", color="white", height=FIXATION_SIZE_DEG)
 
-# Feedback texts
-feedback1 = visual.TextStim(win, text="", color="white", pos=(0, 70), height=30)  # Expected/Max reward
-feedback2 = visual.TextStim(win, text="", color="white", pos=(0, -70), height=30)  # Cumulative reward
+# Feedback texts (pos and height in deg)
+feedback1 = visual.TextStim(win, text="", color="white", pos=(0, 2), height=0.5)  # Expected/Max reward
+feedback2 = visual.TextStim(win, text="", color="white", pos=(0, -2), height=0.5)  # Cumulative reward
 
 # Instructions
 instructions = visual.TextStim(
-    win, 
+    win,
     text="Press 1, 2, 3, or 4 to respond to the cue at that location\n\nPress SPACE to start",
     color="white",
-    height=25
+    height=0.4
 )
 
 # Show instructions
@@ -180,7 +200,7 @@ for session in range(NUM_SESSIONS):
         trial_index += 1
 
 # End message
-end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=30)
+end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=0.5)
 end_text.draw()
 win.flip()
 event.waitKeys()
