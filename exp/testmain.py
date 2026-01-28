@@ -73,7 +73,7 @@ mon.setDistance(MONITOR_DISTANCE_CM)
 mon.saveMon()
 win = visual.Window(
     size=WIN_SIZE_PIX,
-    fullscr=False,
+    fullscr=True,
     allowGUI=True,
     units=USE_UNITS,
     colorSpace=USE_COLOR_SPACE,
