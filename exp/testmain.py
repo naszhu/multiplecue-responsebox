@@ -47,6 +47,7 @@ STIMULUS_OPACITY = 1.0       # Paradigm StimulusOpacity
 CUE_TEXT_ORI = 0
 CUE_TEXT_ANTIALIAS = True
 FIXATION_SIZE_DEG = 0.16     # FixationSize = 4*StimFactor
+FIXATION_POINT_COLOR = (-1, -1, -1)  # Black for CCRP (ExperimentType 3)
 FEEDBACK_LETTER_SIZE_DEG = 2.0   # FeedbackLetterSize = 50*StimFactor
 FEEDBACK2_POS_DEG = (0, -2.8)    # pos=(0, -70*StimFactor)
 INSTRUCTION_LETTER_SIZE_DEG = 0.6  # InstructionLetterSize = 15*StimFactor
@@ -134,8 +135,16 @@ for _ in range(total_trials):
             position_to_cue[pos_idx] = None  # No cue at this position
     trial_cue_positions.append(position_to_cue)
 
-# Fixation point
-fixation = visual.TextStim(win, text="+", color="white", height=FIXATION_SIZE_DEG)
+# Fixation point (match paradigm: visual.Circle, size=FixationSize, FixationPointColor)
+fixation = visual.Circle(
+    win,
+    size=FIXATION_SIZE_DEG,
+    units=USE_UNITS,
+    fillColor=FIXATION_POINT_COLOR,
+    lineColor=None,
+    pos=(0, 0),
+    edges=CIRCLE_EDGES,
+)
 
 # Feedback texts (match paradigm: Feedback1 at (0,0), Feedback2 at (0,-70*StimFactor))
 feedback1 = visual.TextStim(win, text="", color="white", pos=(0, 0), height=FEEDBACK_LETTER_SIZE_DEG)
