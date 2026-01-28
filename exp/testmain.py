@@ -41,6 +41,11 @@ POSITIONS_DEG = [
 CUE_OUTER_RADIUS_DEG = 0.8   # ColorTargetSize
 CUE_INNER_RADIUS_DEG = 0.35  # CueBoxSize/2
 CUE_TEXT_HEIGHT_DEG = 0.56   # CueTextSize
+STIMULUS_OPACITY = 1.0       # Paradigm StimulusOpacity
+
+# Cue number text (match paradigm TextStim: ori=0, no font/bold, antialias, center anchor)
+CUE_TEXT_ORI = 0
+CUE_TEXT_ANTIALIAS = True
 FIXATION_SIZE_DEG = 0.16     # FixationSize = 4*StimFactor
 FEEDBACK_LETTER_SIZE_DEG = 2.0   # FeedbackLetterSize = 50*StimFactor
 FEEDBACK2_POS_DEG = (0, -2.8)    # pos=(0, -70*StimFactor)
@@ -52,8 +57,8 @@ MONITOR_NAME = "OF2A_03_5_513_lab5"
 MONITOR_WIDTH_CM = 52
 MONITOR_DISTANCE_CM = 60
 USE_UNITS = "deg"
-USE_COLOR_SPACE = "rgb"
-MULTI_SAMPLE = True   # Anti-aliasing for smooth edges (paradigm has smooth circles)
+USE_COLOR_SPACE = "rgb" #same as the defult value
+MULTI_SAMPLE = True   # same as defult value, Anti-aliasing for smooth edges (paradigm has smooth circles)
 NUM_SAMPLES = 4      # Samples per pixel when multiSample enabled
 CIRCLE_EDGES = 200   # Paradigm uses edges=200 for smooth circles (default ~32 is jagged)
 
@@ -92,7 +97,21 @@ cue_stimuli = []  # list of tuples (outer, inner, text)
 for i, pos in enumerate(positions):
     outer = visual.Circle(win, radius=CUE_OUTER_RADIUS_DEG, fillColor=cue_colors[i], lineColor=None, pos=pos, edges=CIRCLE_EDGES)
     inner = visual.Circle(win, radius=CUE_INNER_RADIUS_DEG, fillColor=CUE_BG_COLOR, lineColor=None, pos=pos, edges=CIRCLE_EDGES)
-    text = visual.TextStim(win, text="", color=CUE_TEXT_COLOR, pos=pos, height=CUE_TEXT_HEIGHT_DEG, font='Arial Bold', bold=True)
+    text = visual.TextStim(
+        win,
+        text="",
+        ori=CUE_TEXT_ORI,
+        pos=pos,
+        height=CUE_TEXT_HEIGHT_DEG,
+        units=USE_UNITS,
+        colorSpace=USE_COLOR_SPACE,
+        opacity=STIMULUS_OPACITY,
+        color=CUE_TEXT_COLOR,
+        antialias=CUE_TEXT_ANTIALIAS,
+        alignText="center",
+        anchorHoriz="center",
+        anchorVert="center",
+    )
     cue_stimuli.append((outer, inner, text))  # Store as tuple
 
 # Pre-assign all reward values for all trials (all sessions)
