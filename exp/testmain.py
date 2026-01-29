@@ -27,15 +27,18 @@ BG_COLOR = (0, 0, 0)
 TARGET_DISTANCE_DEG = 2.0
 TARGET_LOC_ROTATION_RAD = math.pi / 4
 POSITIONS_DEG = [
-    (TARGET_DISTANCE_DEG * math.cos(0 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD),
-     TARGET_DISTANCE_DEG * math.sin(0 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD)),
-    (TARGET_DISTANCE_DEG * math.cos(1 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD),
-     TARGET_DISTANCE_DEG * math.sin(1 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD)),
-    (TARGET_DISTANCE_DEG * math.cos(2 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD),
-     TARGET_DISTANCE_DEG * math.sin(2 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD)),
-    (TARGET_DISTANCE_DEG * math.cos(3 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD),
-     TARGET_DISTANCE_DEG * math.sin(3 * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD)),
+    (
+        TARGET_DISTANCE_DEG * math.cos(i * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD),
+        TARGET_DISTANCE_DEG * math.sin(i * 2 * math.pi / 4 + TARGET_LOC_ROTATION_RAD)
+    )
+    for i in range(4)
 ]
+
+# Index	    Angle	cos	sin	(x, y)	Screen location
+# 0	45°	    +0.707	+0.707	(1.414, 1.414)	top-right
+# 1	135°	-0.707	+0.707	(-1.414, 1.414)	top-left
+# 2	225°	-0.707	-0.707	(-1.414, -1.414)	bottom-left
+# 3	315°	+0.707	-0.707	(1.414, -1.414)	bottom-right
 
 # Stimulus sizes (deg): ColorTargetSize=0.8 radius, CueBoxSize/2=0.35, CueTextSize=0.56 (StimFactor=0.04, CueScaleFactor=0.7)
 CUE_OUTER_RADIUS_DEG = 0.8   # ColorTargetSize
@@ -87,8 +90,10 @@ win = visual.Window(
 # Define cue positions (4 locations, from POSITIONS_DEG)
 positions = POSITIONS_DEG
 
-# Response keys corresponding to each position
-response_keys = ['1', '2', '3', '4']
+# Response keys: key 1=top-left, 2=top-right, 3=bottom-left, 4=bottom-right
+# POSITIONS_DEG order: 0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right (45° rotation)
+# So response_keys[i] = key for position i: ['2','1','3','4']
+response_keys = ['2', '1', '3', '4']
 
 # Colors for each cue (from paradigm StimulusTargetColorsRGB)
 cue_colors = STIMULUS_TARGET_COLORS_RGB
