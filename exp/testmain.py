@@ -5,6 +5,9 @@ Press corresponding key to respond.
 """
 import math
 import random
+from pathlib import Path
+
+import pandas as pd
 from psychopy import logging, visual, core, event, monitors
 
 logging.console.setLevel(logging.DEBUG)
@@ -171,9 +174,10 @@ event.waitKeys(keyList=['space'])
 # Create clock for response time measurement
 clock = core.Clock()
 
-# Initialize cumulative reward
+# Initialize cumulative reward and trial data log
 cum_reward = 0.0
 trial_index = 0
+trial_data = []
 
 # Run sessions
 for session in range(NUM_SESSIONS):
@@ -221,18 +225,22 @@ for session in range(NUM_SESSIONS):
         max_reward = max(CUE_VALUE[c - 1] for c in cues_shown)
         actual_reward = 0
         
+        pressed_key = ""
+        rt = None
+        selected_position = None
+
         if keys:
             pressed_key = keys[0][0]  # Key name
             response_time = keys[0][1]  # Response time timestamp
-            
+
             # Check for escape key
             if pressed_key == 'escape':
                 break
-            
+
             rt = (response_time - cue_time) * 1000  # RT in milliseconds
             selected_position = response_keys.index(pressed_key)  # Position index (0-3)
             selected_cue = position_to_cue[selected_position]  # Get cue number at selected position
-            
+
             # Calculate actual reward: value of the cue at the selected position
             # Only give reward if the selected position has a cue (was shown in this trial)
             if selected_cue is not None and selected_cue in cues_shown:
@@ -248,13 +256,38 @@ for session in range(NUM_SESSIONS):
         feedback1.text = f"{actual_reward} / {max_reward}"
         feedback1.color = "red" if actual_reward == 0 else "green"
         feedback2.text = f"{cum_reward:.2f}"
-        
+        feedback_text = f"{actual_reward} / {max_reward}"
+
         feedback1.draw()
         feedback2.draw()
         win.flip()
         core.wait(FEEDBACK_WAIT_TIME)
-        
+
+        # Record trial data (minimal basic fields)
+        trial_data.append({
+            "trial": trial_index + 1,
+            "session": session + 1,
+            "stimulus": ",".join(str(c) for c in sorted(cues_shown)),
+            "condition": f"{len(cues_shown)}cue",
+            "key_press": pressed_key if pressed_key else "timeout",
+            "rt_ms": rt,
+            "reward": actual_reward,
+            "max_reward": max_reward,
+            "correctness": 1 if actual_reward > 0 else 0,
+            "feedback": feedback_text,
+            "accumulated_reward": cum_reward,
+        })
+
         trial_index += 1
+
+# Save trial data to CSV
+if trial_data:
+    df = pd.DataFrame(trial_data)
+    out_dir = Path(__file__).resolve().parent / "data_written"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "trial_data.csv"
+    df.to_csv(out_path, index=False)
+    logging.info(f"Saved {len(df)} trials to {out_path}")
 
 # End message
 end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=FEEDBACK_LETTER_SIZE_DEG)
