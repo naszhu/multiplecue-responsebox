@@ -177,7 +177,10 @@ clock = core.Clock()
 # Initialize cumulative reward and trial data log
 cum_reward = 0.0
 trial_index = 0
-trial_data = []
+out_dir = Path(__file__).resolve().parent / "data_written"
+out_dir.mkdir(parents=True, exist_ok=True)
+out_path = out_dir / "trial_data.csv"
+first_trial_save = True  # Write header on first trial
 
 # Run sessions
 for session in range(NUM_SESSIONS):
@@ -263,8 +266,8 @@ for session in range(NUM_SESSIONS):
         win.flip()
         core.wait(FEEDBACK_WAIT_TIME)
 
-        # Record trial data (minimal basic fields)
-        trial_data.append({
+        # Save trial data immediately (minimal basic fields)
+        row = {
             "trial": trial_index + 1,
             "session": session + 1,
             "stimulus": ",".join(str(c) for c in sorted(cues_shown)),
@@ -276,18 +279,12 @@ for session in range(NUM_SESSIONS):
             "correctness": 1 if actual_reward > 0 else 0,
             "feedback": feedback_text,
             "accumulated_reward": cum_reward,
-        })
+        }
+        df = pd.DataFrame([row])
+        df.to_csv(out_path, mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
+        first_trial_save = False
 
         trial_index += 1
-
-# Save trial data to CSV
-if trial_data:
-    df = pd.DataFrame(trial_data)
-    out_dir = Path(__file__).resolve().parent / "data_written"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "trial_data.csv"
-    df.to_csv(out_path, index=False)
-    logging.info(f"Saved {len(df)} trials to {out_path}")
 
 # End message
 end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=FEEDBACK_LETTER_SIZE_DEG)
