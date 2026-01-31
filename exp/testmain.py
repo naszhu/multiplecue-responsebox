@@ -54,8 +54,17 @@ CUE_TEXT_ORI = 0
 CUE_TEXT_ANTIALIAS = True
 FIXATION_SIZE_DEG = 0.16     # FixationSize = 4*StimFactor
 FIXATION_POINT_COLOR = (-1, -1, -1)  # Black for CCRP (ExperimentType 3)
-FEEDBACK_LETTER_SIZE_DEG = 2.0   # FeedbackLetterSize = 50*StimFactor
-FEEDBACK2_POS_DEG = (0, -2.8)    # pos=(0, -70*StimFactor)
+
+# Feedback (match paradigm: Feedback1-4, positions, sizes, colors)
+STIM_FACTOR = 0.04
+FEEDBACK_LETTER_SIZE_DEG = 50 * STIM_FACTOR   # FeedbackLetterSize = 50*StimFactor
+FEEDBACK1_POS_DEG = (0, 70 * STIM_FACTOR)    # Feedback1 pos for Exp type 3
+FEEDBACK2_POS_DEG = (0, -70 * STIM_FACTOR)
+FEEDBACK3_POS_DEG = (0, -140 * STIM_FACTOR)
+FEEDBACK4_POS_DEG = (0, -200 * STIM_FACTOR)
+FEEDBACK_ZERO_REWARD_COLOR = (1, -1, -1)     # Red when reward=0
+FEEDBACK_POS_REWARD_COLOR = (-1, 0.7, -1)    # Green when reward>0
+
 INSTRUCTION_LETTER_SIZE_DEG = 0.6  # InstructionLetterSize = 15*StimFactor
 
 # Display / monitor (match paradigm exactly)
@@ -154,9 +163,11 @@ fixation = visual.Circle(
     edges=CIRCLE_EDGES,
 )
 
-# Feedback texts (match paradigm: Feedback1 at (0,0), Feedback2 at (0,-70*StimFactor))
-feedback1 = visual.TextStim(win, text="", color="white", pos=(0, 0), height=FEEDBACK_LETTER_SIZE_DEG)
-feedback2 = visual.TextStim(win, text="", color="white", pos=FEEDBACK2_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.6)
+# Feedback texts (match paradigm Feedback1-4: positions, sizes, ori, opacity)
+feedback1 = visual.TextStim(win, text="", pos=FEEDBACK1_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
+feedback2 = visual.TextStim(win, text="", pos=FEEDBACK2_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.6, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
+feedback3 = visual.TextStim(win, text="", pos=FEEDBACK3_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.6, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
+feedback4 = visual.TextStim(win, text="", pos=FEEDBACK4_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.2, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
 
 # Instructions (InstructionLetterSize = 15*StimFactor)
 instructions = visual.TextStim(
@@ -255,14 +266,18 @@ for session in range(NUM_SESSIONS):
         cum_reward += actual_reward * REWARD_MONEY_FACTOR
         cum_reward = round(cum_reward, 2)
         
-        # Show feedback: ActualReward / MaxReward
-        feedback1.text = f"{actual_reward} / {max_reward}"
-        feedback1.color = "red" if actual_reward == 0 else "green"
-        feedback2.text = f"{cum_reward:.2f}"
-        feedback_text = f"{actual_reward} / {max_reward}"
+        # Show feedback (match paradigm: content, colors, format)
+        feedback1.setText(str(actual_reward) + " / " + str(max_reward))
+        feedback1.setColor(FEEDBACK_ZERO_REWARD_COLOR if actual_reward == 0 else FEEDBACK_POS_REWARD_COLOR)
+        feedback2.setText("%.2f" % cum_reward)
+        feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")
+        feedback4.setText("Block  " + str(session + 1) + " / " + str(NUM_SESSIONS) + "               Trial  " + str(trial_index + 1) + " / " + str(NUM_SESSIONS * NUM_TRIALS_PER_SESSION))
 
         feedback1.draw()
         feedback2.draw()
+        feedback3.draw()
+        feedback4.draw()
+        fixation.draw()
         win.flip()
         core.wait(FEEDBACK_WAIT_TIME)
 
@@ -277,7 +292,7 @@ for session in range(NUM_SESSIONS):
             "reward": actual_reward,
             "max_reward": max_reward,
             "correctness": 1 if actual_reward > 0 else 0,
-            "feedback": feedback_text,
+            "feedback": str(actual_reward) + " / " + str(max_reward),
             "accumulated_reward": cum_reward,
         }
         df = pd.DataFrame([row])
