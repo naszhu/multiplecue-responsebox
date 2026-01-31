@@ -7,5 +7,9 @@ exp/MaskGS.gif
 exp/src/__pycache__/
 
 exp/data_written/
+others/To Lea 251127/Data/
+others/To Lea 251127/Logs/
+others/To Lea 251127/__pycache__/
+*.psydat
 
 others/Instructions/
