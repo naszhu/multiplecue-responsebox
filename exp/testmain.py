@@ -12,7 +12,7 @@ from psychopy import logging, visual, core, event, monitors
 
 logging.console.setLevel(logging.DEBUG)
 
-# Constants (defaults from IntentionSelectionParadigmPyExp251118a colored-cue paradigm)
+# Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
 NUM_SESSIONS = 1
@@ -83,6 +83,91 @@ CIRCLE_EDGES = 200   # Paradigm uses edges=200 for smooth circles (default ~32 i
 
 # Cue values: Cue 1=1pt, Cue 2=2pt, Cue 3=3pt, Cue 4=4pt
 CUE_VALUE = [1, 2, 3, 4]
+
+NUM_POSITIONS = 4
+
+
+def _build_trial_row(
+    *,
+    position_to_cue,
+    cues_shown,
+    selected_position,
+    selected_cue,
+    pressed_key,
+    keys,
+    cue_time,
+    response_time,
+    end_trial_time,
+    actual_reward,
+    max_reward,
+    cum_reward,
+    session,
+    trial_index,
+):
+    """Build a trial data row """
+    # Cue layout: 4-digit strings (position 0..3)
+    cues = [position_to_cue[i] or 0 for i in range(NUM_POSITIONS)]
+    cue_vals = [CUE_VALUE[c - 1] if c else 0 for c in cues]
+    sorted_cues = sorted(cues)
+    cue_ranks = [NUM_POSITIONS - sorted_cues.index(cues[i]) for i in range(NUM_POSITIONS)]
+
+    # Response
+    sel = selected_position
+    has_response = sel is not None
+    resp_loc = "".join("1" if i == sel else "0" for i in range(NUM_POSITIONS)) if has_response else "0000"
+    point_target = (sel + 1) if has_response else 0
+    sel_cue = position_to_cue[sel] if has_response else None
+
+    rt_sec = (response_time - cue_time) if (keys and pressed_key != "escape") else (MAX_WAIT_TIME if not keys else 0.0)
+    late = rt_sec > RESPONSE_DEADLINE
+    intr = 1 if (has_response and sel_cue is None) else 0
+    acc = 1 if actual_reward > 0 else 0
+    cue_exp = sel_cue if (has_response and sel_cue) else 0
+    cue_rank_resp = cue_ranks[sel] if (has_response and sel_cue) else 0
+    exp_reward = CUE_VALUE[cue_exp - 1] if cue_exp > 0 else 0
+
+    cond = f"{len(cues_shown)}cue"
+
+    return {
+        "ExperimentName": EXPERIMENT_NAME,
+        "ExperimentNumber": EXPERIMENT_NUMBER,
+        "Subject": "",
+        "Session": session + 1,
+        "Block": session + 1,
+        "Trial": trial_index + 1,
+        "WarmUpTrial": 0,
+        "CueCondition": cond,
+        "NumCues": len(cues_shown),
+        "TrialStartJitterTime": FIXATION_WAIT_TIME,
+        "CueSOA": 0,
+        "Cues": "".join(str(c) for c in cues),
+        "CueValues": "".join(str(v) for v in cue_vals),
+        "CueRanks": "".join(str(r) for r in cue_ranks),
+        "Response": pressed_key or "timeout",
+
+        # RespLoc: 4-digit one-hot of response position (pos0..pos3). E.g. "1000"=top-right, "0100"=top-left, "0010"=bottom-left, "0001"=bottom-right, "0000"=timeout
+        "RespLoc": resp_loc,
+        # PointTargetResponse: 1=pos0 (top-right), 2=pos1 (top-left), 3=pos2 (bottom-left), 4=pos3 (bottom-right), 0=timeout
+        "PointTargetResponse": point_target, 
+        
+        "RT": round(rt_sec, 4),
+        "LateResponse": late, # 1 - late response, 0 - on time response
+        "ACC": acc, # 1 - correct response, 0 - incorrect response
+        "INTR": intr, # 1 - intrusion error, 0 - no intrusion error, if respond to the non-cued position
+        "CueResponseValue": actual_reward, # the value of the cue at the selected position
+        "CueResponseExpValue": cue_exp, # the expected value of the cue at the selected position
+        "CueRankResponse": cue_rank_resp, # the rank of the cue at the selected position
+        "ExpectedReward": exp_reward, # the expected reward for the trial
+        "Reward": actual_reward, # the actual reward for the trial
+        "MaxReward": max_reward, # the maximum reward for the trial
+        "CumReward": cum_reward, # the cumulative reward for the session
+        "CueTime": round(cue_time, 4),
+        "PointTargetTime": round(cue_time + rt_sec, 4) if rt_sec else round(cue_time, 4),
+        "ColorTargetTime": round(cue_time, 4),
+        "EndTrialTime": round(end_trial_time, 4),
+        "Note": "",
+    }
+
 
 # Create window matching paradigm display settings
 mon = monitors.Monitor(MONITOR_NAME)
@@ -242,6 +327,7 @@ for session in range(NUM_SESSIONS):
         max_reward = max(CUE_VALUE[c - 1] for c in cues_shown)
         actual_reward = 0
         
+        # below are defulat value for timeout
         pressed_key = ""
         rt = None
         selected_position = None
@@ -287,90 +373,24 @@ for session in range(NUM_SESSIONS):
         core.wait(FEEDBACK_WAIT_TIME)
         end_trial_time = clock.getTime()
 
-        # Build paradigm-style columns (match IntentionSelectionParadigmPyExp251118a ExperimentType 3)
-        cues_list = [position_to_cue[i] or 0 for i in range(4)]
-        cues_str = "".join(str(c) for c in cues_list)
-        cues_val_str = "".join(str(CUE_VALUE[c - 1]) if c else "0" for c in cues_list)
-        # CueRanks: rank 1=highest value, 4=lowest, 4=empty (paradigm: 4 - sorted(Cues).index(x))
-        sorted_cues = sorted(cues_list)
-        cue_ranks = [4 - sorted_cues.index(cues_list[i]) for i in range(4)]
-        cue_ranks_str = "".join(str(r) for r in cue_ranks)
-        c_str = "".join(str(position_to_cue[i] or 0) for i in range(4))  # C: color/cue index at each position
+        # Build paradigm-style trial row 
+        row = _build_trial_row(
+            position_to_cue=position_to_cue,
+            cues_shown=cues_shown,
+            selected_position=selected_position,
+            selected_cue=selected_cue,
+            pressed_key=pressed_key,
+            keys=keys,
+            cue_time=cue_time,
+            response_time=response_time,
+            end_trial_time=end_trial_time,
+            actual_reward=actual_reward,
+            max_reward=max_reward,
+            cum_reward=cum_reward,
+            session=session,
+            trial_index=trial_index,
+        )
 
-        resp_loc = "".join("1" if i == selected_position else "0" for i in range(4)) if selected_position is not None else "0000"
-        point_target_response = (selected_position + 1) if selected_position is not None else 0
-        rt_sec = (response_time - cue_time) if keys and pressed_key != "escape" else (MAX_WAIT_TIME if not keys else 0.0)
-        late_response = rt_sec > RESPONSE_DEADLINE
-        intr = 1 if (selected_position is not None and selected_cue is None) else 0
-        acc = 1 if actual_reward > 0 else 0
-        err = 0  # Single key response
-        cue_response_value = actual_reward
-        cue_response_exp_value = position_to_cue[selected_position] if selected_position is not None and position_to_cue[selected_position] else 0
-        cue_rank_response = cue_ranks[selected_position] if (selected_position is not None and position_to_cue[selected_position]) else 0
-        expected_reward = CUE_VALUE[cue_response_exp_value - 1] if cue_response_exp_value > 0 else 0
-
-        row = {
-            "ExperimentName": EXPERIMENT_NAME,
-            "ExperimentNumber": EXPERIMENT_NUMBER,
-            "Subject": "",
-            "Session": session + 1,
-            "Block": session + 1,
-            "Trial": trial_index + 1,
-            "WarmUpTrial": 0,
-            "CueCondition": f"{len(cues_shown)}cue",
-            "Condition": f"{len(cues_shown)}cue",
-            "NoCues": len(cues_shown),
-            "TrialStartJitterTime": FIXATION_WAIT_TIME,
-            "CueSOA": 0,
-            "Cues": cues_str,
-            "CueValues": cues_val_str,
-            "CueRanks": cue_ranks_str,
-            "LetterContrast": -1,
-            "EDletters": -1,
-            "T": "",
-            "C": c_str,
-            "R": pressed_key if pressed_key else "timeout",
-            "RespLoc": resp_loc,
-            "PointTargetResponse": point_target_response,
-            "RT": round(rt_sec, 4),
-            "LateResponse": late_response,
-            "ACC": acc,
-            "INTR": intr,
-            "ERR": err,
-            "CueResponseValue": cue_response_value,
-            "CueResponseExpValue": cue_response_exp_value,
-            "CueRankResponse": cue_rank_response,
-            "ExpectedReward": expected_reward,
-            "Reward": actual_reward,
-            "MaxReward": max_reward,
-            "CumReward": cum_reward,
-            "Saccade": False,
-            "CueGazeX": 0,
-            "CueGazeY": 0,
-            "LetterGazeX": 0,
-            "LetterGazeY": 0,
-            "MaskGazeX": 0,
-            "MaskGazeY": 0,
-            "TargetGazeX": 0,
-            "TargetGazeY": 0,
-            "DriftCorrectX": 0,
-            "DriftCorrectY": 0,
-            "RefreshRate": 0,
-            "MeasuredRefreshRate": 0,
-            "mEDcues": 0,
-            "mEDletters": 0,
-            "mEDmasks": 0,
-            "CueTime": round(cue_time, 4),
-            "CueMaskTime": round(cue_time, 4),
-            "StimTime": round(cue_time, 4),
-            "MaskTime": round(cue_time, 4),
-            "PointTargetTime": round(cue_time + rt_sec, 4) if rt_sec else round(cue_time, 4),
-            "ColorTargetTime": round(cue_time, 4),
-            "EndTrialTime": round(end_trial_time, 4),
-            "EyeOffsetTime": 0,
-            "Note": "",
-            "NumberEyeSamples": 0,
-        }
         df = pd.DataFrame([row])
         df.to_csv(out_path, mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
         first_trial_save = False
