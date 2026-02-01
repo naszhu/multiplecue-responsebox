@@ -13,12 +13,15 @@ from psychopy import logging, visual, core, event, monitors
 logging.console.setLevel(logging.DEBUG)
 
 # Constants (defaults from IntentionSelectionParadigmPyExp251118a colored-cue paradigm)
+EXPERIMENT_NAME = "CCP"
+EXPERIMENT_NUMBER = 1001
 NUM_SESSIONS = 1
 NUM_TRIALS_PER_SESSION = 5
 MAX_WAIT_TIME = 5.0
 FIXATION_WAIT_TIME = 1.0
 FEEDBACK_WAIT_TIME = 1.5
 REWARD_MONEY_FACTOR = 0.1
+RESPONSE_DEADLINE = 2.0  # seconds, match paradigm ResponseDeadline
 
 # Stimulus colors RGB (-1 to 1): Red, Green, Blue, Yellow
 STIMULUS_TARGET_COLORS_RGB = [(1, -1, -1), (-1, 1, -1), (-1, -1, 1), (1, 1, -1)]
@@ -229,7 +232,7 @@ for session in range(NUM_SESSIONS):
             inner.draw()   # Draw white inner circle
             text.draw()    # Draw reward number (only if cue is shown at this position)
         win.flip()
-        cue_time = clock.getTime()  # Record when cues appear
+        cue_time = clock.getTime()  # CueTime / ColorTargetTime (cues = color targets)
         
         # Wait for response
         event.clearEvents()
@@ -242,6 +245,8 @@ for session in range(NUM_SESSIONS):
         pressed_key = ""
         rt = None
         selected_position = None
+        selected_cue = None
+        response_time = cue_time  # default for timeout
 
         if keys:
             pressed_key = keys[0][0]  # Key name
@@ -280,20 +285,91 @@ for session in range(NUM_SESSIONS):
         fixation.draw()
         win.flip()
         core.wait(FEEDBACK_WAIT_TIME)
+        end_trial_time = clock.getTime()
 
-        # Save trial data immediately (minimal basic fields)
+        # Build paradigm-style columns (match IntentionSelectionParadigmPyExp251118a ExperimentType 3)
+        cues_list = [position_to_cue[i] or 0 for i in range(4)]
+        cues_str = "".join(str(c) for c in cues_list)
+        cues_val_str = "".join(str(CUE_VALUE[c - 1]) if c else "0" for c in cues_list)
+        # CueRanks: rank 1=highest value, 4=lowest, 4=empty (paradigm: 4 - sorted(Cues).index(x))
+        sorted_cues = sorted(cues_list)
+        cue_ranks = [4 - sorted_cues.index(cues_list[i]) for i in range(4)]
+        cue_ranks_str = "".join(str(r) for r in cue_ranks)
+        c_str = "".join(str(position_to_cue[i] or 0) for i in range(4))  # C: color/cue index at each position
+
+        resp_loc = "".join("1" if i == selected_position else "0" for i in range(4)) if selected_position is not None else "0000"
+        point_target_response = (selected_position + 1) if selected_position is not None else 0
+        rt_sec = (response_time - cue_time) if keys and pressed_key != "escape" else (MAX_WAIT_TIME if not keys else 0.0)
+        late_response = rt_sec > RESPONSE_DEADLINE
+        intr = 1 if (selected_position is not None and selected_cue is None) else 0
+        acc = 1 if actual_reward > 0 else 0
+        err = 0  # Single key response
+        cue_response_value = actual_reward
+        cue_response_exp_value = position_to_cue[selected_position] if selected_position is not None and position_to_cue[selected_position] else 0
+        cue_rank_response = cue_ranks[selected_position] if (selected_position is not None and position_to_cue[selected_position]) else 0
+        expected_reward = CUE_VALUE[cue_response_exp_value - 1] if cue_response_exp_value > 0 else 0
+
         row = {
-            "trial": trial_index + 1,
-            "session": session + 1,
-            "stimulus": ",".join(str(c) for c in sorted(cues_shown)),
-            "condition": f"{len(cues_shown)}cue",
-            "key_press": pressed_key if pressed_key else "timeout",
-            "rt_ms": rt,
-            "reward": actual_reward,
-            "max_reward": max_reward,
-            "correctness": 1 if actual_reward > 0 else 0,
-            "feedback": str(actual_reward) + " / " + str(max_reward),
-            "accumulated_reward": cum_reward,
+            "ExperimentName": EXPERIMENT_NAME,
+            "ExperimentNumber": EXPERIMENT_NUMBER,
+            "Subject": "",
+            "Session": session + 1,
+            "Block": session + 1,
+            "Trial": trial_index + 1,
+            "WarmUpTrial": 0,
+            "CueCondition": f"{len(cues_shown)}cue",
+            "Condition": f"{len(cues_shown)}cue",
+            "NoCues": len(cues_shown),
+            "TrialStartJitterTime": FIXATION_WAIT_TIME,
+            "CueSOA": 0,
+            "Cues": cues_str,
+            "CueValues": cues_val_str,
+            "CueRanks": cue_ranks_str,
+            "LetterContrast": -1,
+            "EDletters": -1,
+            "T": "",
+            "C": c_str,
+            "R": pressed_key if pressed_key else "timeout",
+            "RespLoc": resp_loc,
+            "PointTargetResponse": point_target_response,
+            "RT": round(rt_sec, 4),
+            "LateResponse": late_response,
+            "ACC": acc,
+            "INTR": intr,
+            "ERR": err,
+            "CueResponseValue": cue_response_value,
+            "CueResponseExpValue": cue_response_exp_value,
+            "CueRankResponse": cue_rank_response,
+            "ExpectedReward": expected_reward,
+            "Reward": actual_reward,
+            "MaxReward": max_reward,
+            "CumReward": cum_reward,
+            "Saccade": False,
+            "CueGazeX": 0,
+            "CueGazeY": 0,
+            "LetterGazeX": 0,
+            "LetterGazeY": 0,
+            "MaskGazeX": 0,
+            "MaskGazeY": 0,
+            "TargetGazeX": 0,
+            "TargetGazeY": 0,
+            "DriftCorrectX": 0,
+            "DriftCorrectY": 0,
+            "RefreshRate": 0,
+            "MeasuredRefreshRate": 0,
+            "mEDcues": 0,
+            "mEDletters": 0,
+            "mEDmasks": 0,
+            "CueTime": round(cue_time, 4),
+            "CueMaskTime": round(cue_time, 4),
+            "StimTime": round(cue_time, 4),
+            "MaskTime": round(cue_time, 4),
+            "PointTargetTime": round(cue_time + rt_sec, 4) if rt_sec else round(cue_time, 4),
+            "ColorTargetTime": round(cue_time, 4),
+            "EndTrialTime": round(end_trial_time, 4),
+            "EyeOffsetTime": 0,
+            "Note": "",
+            "NumberEyeSamples": 0,
         }
         df = pd.DataFrame([row])
         df.to_csv(out_path, mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
