@@ -192,8 +192,9 @@ positions = POSITIONS_DEG
 
 # Response keys: key 1=top-left, 2=top-right, 3=bottom-left, 4=bottom-right
 # POSITIONS_DEG order: 0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right (45° rotation)
-# So response_keys[i] = key for position i: ['2','1','3','4']
-response_keys = ['2', '1', '3', '4']
+# response_keys[i] = key for position i: 0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right
+# d=top-left, c=bottom-left, k=top-right, m=bottom-right
+response_keys = ['k', 'd', 'c', 'm']
 
 # Colors for each cue (from paradigm StimulusTargetColorsRGB)
 cue_colors = STIMULUS_TARGET_COLORS_RGB
@@ -260,7 +261,7 @@ feedback4 = visual.TextStim(win, text="", pos=FEEDBACK4_POS_DEG, height=FEEDBACK
 # Instructions (InstructionLetterSize = 15*StimFactor)
 instructions = visual.TextStim(
     win,
-    text="Press 1, 2, 3, or 4 to respond to the cue at that location\n\nPress SPACE to start",
+    text="Press D (top-left), C (bottom-left), K (top-right), or M (bottom-right) to respond\n\nPress SPACE to start",
     color="white",
     height=INSTRUCTION_LETTER_SIZE_DEG,
 )
