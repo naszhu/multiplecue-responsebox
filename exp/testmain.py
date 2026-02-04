@@ -312,7 +312,8 @@ for session in range(NUM_SESSIONS):
             else:
                 text.setText("")  # No cue at this position, no number
         
-        # Show all cues and record presentation time
+        # Show all cues and record presentation time (fixation stays visible, match paradigm)
+        fixation.draw()
         for outer, inner, text in cue_stimuli:
             outer.draw()  # Draw colored outer circle
             inner.draw()   # Draw white inner circle
