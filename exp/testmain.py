@@ -1,7 +1,7 @@
 """
-Simple Multiple Cue Paradigm Demo with Reward System
-Multiple colored circles (cues) appear on screen at different locations.
-Press corresponding key to respond.
+CCRP (Cued Color Response Paradigm): Color-to-key response mapping.
+Each color (Red, Green, Blue, Yellow) is associated with a key (D, C, K, M).
+Participant's task: press the key for the color of the circle with the highest reward.
 """
 import math
 import random
@@ -84,6 +84,10 @@ CIRCLE_EDGES = 200   # Paradigm uses edges=200 for smooth circles (default ~32 i
 # Cue values: Cue 1=1pt, Cue 2=2pt, Cue 3=3pt, Cue 4=4pt
 CUE_VALUE = [1, 2, 3, 4]
 
+# Color-to-key mapping: Red→D, Green→C, Blue→K, Yellow→M
+# Position i has fixed color: 0=Red, 1=Green, 2=Blue, 3=Yellow (from STIMULUS_TARGET_COLORS_RGB)
+COLOR_KEYS = ['d', 'c', 'k', 'm']  # key for position/color 0,1,2,3
+
 NUM_POSITIONS = 4
 
 
@@ -121,7 +125,8 @@ def _build_trial_row(
     rt_sec = (response_time - cue_time) if (keys and pressed_key != "escape") else (MAX_WAIT_TIME if not keys else 0.0)
     late = rt_sec > RESPONSE_DEADLINE
     intr = 1 if (has_response and sel_cue is None) else 0
-    acc = 1 if actual_reward > 0 else 0
+    # ACC: correct = selected the circle with highest reward (color-to-key rule)
+    acc = 1 if actual_reward == max_reward and max_reward > 0 else 0
     cue_exp = sel_cue if (has_response and sel_cue) else 0
     cue_rank_resp = cue_ranks[sel] if (has_response and sel_cue) else 0
     exp_reward = CUE_VALUE[cue_exp - 1] if cue_exp > 0 else 0
@@ -145,9 +150,9 @@ def _build_trial_row(
         "CueRanks": "".join(str(r) for r in cue_ranks),
         "Response": pressed_key or "timeout",
 
-        # RespLoc: 4-digit one-hot of response position (pos0..pos3). E.g. "1000"=top-right, "0100"=top-left, "0010"=bottom-left, "0001"=bottom-right, "0000"=timeout
+        # RespLoc: 4-digit one-hot of selected color (CCRP: pos0=Red, pos1=Green, pos2=Blue, pos3=Yellow)
         "RespLoc": resp_loc,
-        # PointTargetResponse: 1=pos0 (top-right), 2=pos1 (top-left), 3=pos2 (bottom-left), 4=pos3 (bottom-right), 0=timeout
+        # PointTargetResponse: 1=Red, 2=Green, 3=Blue, 4=Yellow, 0=timeout
         "PointTargetResponse": point_target, 
         
         "RT": round(rt_sec, 4),
@@ -190,11 +195,9 @@ win = visual.Window(
 # Define cue positions (4 locations, from POSITIONS_DEG)
 positions = POSITIONS_DEG
 
-# Response keys: key 1=top-left, 2=top-right, 3=bottom-left, 4=bottom-right
-# POSITIONS_DEG order: 0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right (45° rotation)
-# response_keys[i] = key for position i: 0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right
-# d=top-left, c=bottom-left, k=top-right, m=bottom-right
-response_keys = ['k', 'd', 'c', 'm']
+# Response keys: color-to-key mapping (Red=D, Green=C, Blue=K, Yellow=M)
+# Position 0=Red, 1=Green, 2=Blue, 3=Yellow
+response_keys = COLOR_KEYS
 
 # Colors for each cue (from paradigm StimulusTargetColorsRGB)
 cue_colors = STIMULUS_TARGET_COLORS_RGB
@@ -261,7 +264,9 @@ feedback4 = visual.TextStim(win, text="", pos=FEEDBACK4_POS_DEG, height=FEEDBACK
 # Instructions (InstructionLetterSize = 15*StimFactor)
 instructions = visual.TextStim(
     win,
-    text="Press D (top-left), C (bottom-left), K (top-right), or M (bottom-right) to respond\n\nPress SPACE to start",
+    text="Press the key for the COLOR of the circle with the highest reward:\n"
+         "Red = D, Green = C, Blue = K, Yellow = M\n\n"
+         "Press SPACE to start",
     color="white",
     height=INSTRUCTION_LETTER_SIZE_DEG,
 )
