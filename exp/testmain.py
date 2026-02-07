@@ -73,11 +73,12 @@ FEEDBACK_POS_REWARD_COLOR = (-1, 0.7, -1)    # Green when reward>0
 
 INSTRUCTION_LETTER_SIZE_DEG = 0.6  # InstructionLetterSize = 15*StimFactor
 
-# Color-response instruction (paradigm: ResponseColorSize, ResponseColorDistance)
-# Paradigm uses pix; we use deg. Approx: 0.5 deg squares, 0.6 deg spacing, y=-2.5 deg
-RESPONSE_COLOR_SIZE_DEG = 0.5
-RESPONSE_COLOR_DISTANCE_DEG = 0.6
-COLOR_MAP_Y_DEG = -2.5
+# Color-response instruction (paradigm: ResponseColorSize, ResponseColorDistance, -150*StimFactor)
+# Paradigm: ResponseColorSize=30*StimFactor, ResponseColorDistance=50*StimFactor, y=-150*StimFactor
+# x = ResponseColorDistance * (-StimulusColorNoResponses/2 + 0.5 + i)
+RESPONSE_COLOR_SIZE_DEG = 30 * STIM_FACTOR      # 1.2 deg
+RESPONSE_COLOR_DISTANCE_DEG = 50 * STIM_FACTOR  # 2 deg
+COLOR_MAP_Y_DEG = -150 * STIM_FACTOR            # -6 deg
 
 # Display / monitor (match paradigm exactly)
 WIN_SIZE_PIX = (1920, 1080)
@@ -243,10 +244,10 @@ for i, pos in enumerate(positions):
     cue_stimuli.append((outer, inner, text))  # Store as tuple
 
 # Color-response instruction: 4 colored squares at bottom (Session 1 only)
-# Paradigm: pos=(ResponseColorDistance*(-2+0.5+i), -150*StimFactor), i=0..3
+# Paradigm: pos=(ResponseColorDistance*(-StimulusColorNoResponses/2+0.5+i), -150*StimFactor)
 color_response_squares = []
-for i in range(4):
-    x = RESPONSE_COLOR_DISTANCE_DEG * (-2 + 0.5 + i)
+for i in range(NUM_POSITIONS):
+    x = RESPONSE_COLOR_DISTANCE_DEG * (-NUM_POSITIONS / 2 + 0.5 + i)
     rect = visual.Rect(
         win,
         width=RESPONSE_COLOR_SIZE_DEG,
@@ -367,9 +368,10 @@ for trial_in_session in range(n_trials):
     # Session 1: single cue at center; Session 2+: cues at fixed positions
     fixation.draw()
     if is_session1:
-        # Draw single cue at center (cue number 1-4)
+        # Draw single cue at center (cue number 1-4) with reward digit
         cue_num = position_to_cue[0]
         outer, inner, text = cue_stimuli[cue_num - 1]
+        text.setText(str(CUE_VALUE[cue_num - 1]))  # Show reward value in center circle
         orig_pos = outer.pos
         for stim in (outer, inner, text):
             stim.setPos((0, 0))
