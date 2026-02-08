@@ -2,6 +2,13 @@
 CCRP (Cued Color Response Paradigm): Color-to-key response mapping.
 Each color (Red, Green, Blue, Yellow) is associated with a key (D, C, K, M).
 Participant's task: press the key for the color of the circle with the highest reward.
+
+Display flow (win.flip locations):
+  FLIP 1: Instructions → wait for Space
+  FLIP A: Fixation only (per trial)
+  FLIP B: Cues/stimuli → wait for key response
+  FLIP C: Feedback (per trial)
+  FLIP 4: End message → wait for any key
 """
 import math
 import random
@@ -221,8 +228,10 @@ response_keys = COLOR_KEYS
 # Colors for each cue (from paradigm StimulusTargetColorsRGB)
 cue_colors = STIMULUS_TARGET_COLORS_RGB
 
-# Create donut-shaped cues (colored outer circle with white inner circle)
-cue_stimuli = []  # list of tuples (outer, inner, text)
+# cue_stimuli: list of (outer, inner, text) per color
+#   Index 0=Red, 1=Green, 2=Blue, 3=Yellow
+#   outer = colored circle, inner = white circle, text = reward digit (1–4)
+cue_stimuli = []
 for i, pos in enumerate(positions):
     outer = visual.Circle(win, radius=CUE_OUTER_RADIUS_DEG, fillColor=cue_colors[i], lineColor=None, pos=pos, edges=CIRCLE_EDGES)
     inner = visual.Circle(win, radius=CUE_INNER_RADIUS_DEG, fillColor=CUE_BG_COLOR, lineColor=None, pos=pos, edges=CIRCLE_EDGES)
@@ -243,8 +252,14 @@ for i, pos in enumerate(positions):
     )
     cue_stimuli.append((outer, inner, text))  # Store as tuple
 
-# Color-response instruction: 4 colored squares at bottom (Session 1 only)
-# Paradigm: pos=(ResponseColorDistance*(-StimulusColorNoResponses/2+0.5+i), -150*StimFactor)
+# Example cue_stimuli after loop:
+#   cue_stimuli[0] = (outer_red, inner_red, text_red)   # Red circle at pos 0
+#   cue_stimuli[1] = (outer_green, inner_green, text_green)  # Green at pos 1
+#   cue_stimuli[2] = (outer_blue, inner_blue, text_blue)     # Blue at pos 2
+#   cue_stimuli[3] = (outer_yellow, inner_yellow, text_yellow)  # Yellow at pos 3
+
+# color_response_squares: 4 colored Rects at bottom (Session 1 only)
+#   Index 0=Red, 1=Green, 2=Blue, 3=Yellow. Maps colors to key positions.
 color_response_squares = []
 for i in range(NUM_POSITIONS):
     x = RESPONSE_COLOR_DISTANCE_DEG * (-NUM_POSITIONS / 2 + 0.5 + i)
@@ -259,7 +274,12 @@ for i in range(NUM_POSITIONS):
     )
     color_response_squares.append(rect)
 
-# Pre-assign trials for the selected session only
+# -----------------------------------------------------------------------------
+# trial_cue_positions: list of dicts, one per trial
+#   Each dict = position_to_cue: {0: cue_or_None, 1: ..., 2: ..., 3: ...}
+#   Session 1: each trial has one cue at position 0 (drawn at center)
+#   Session 2+: each trial has 1–2 cues at random positions
+# -----------------------------------------------------------------------------
 session_idx = SESSION - 1
 n_trials = NUM_TRIALS_PER_SESSION[session_idx]
 total_trials = n_trials
@@ -321,7 +341,11 @@ def _load_session_instruction(session: int) -> str:
         return path.read_text(encoding="utf-8", errors="replace").strip()
     return instructions.text  # fallback
 
-# Show instructions for the selected session
+# =============================================================================
+# FLIP 1: INSTRUCTIONS SCREEN
+# =============================================================================
+# Presented: Session-specific instruction text + "Press SPACE to begin"
+# Waits for: Space key before continuing
 instructions.setText(_load_session_instruction(SESSION) + "\n\nPress SPACE to begin.")
 instructions.draw()
 win.flip()
@@ -338,48 +362,76 @@ out_dir.mkdir(parents=True, exist_ok=True)
 out_path = out_dir / "trial_data.csv"
 first_trial_save = True  # Write header on first trial
 
-# Run trials for the selected session only
+# =============================================================================
+# TRIAL LOOP
+# =============================================================================
+# Each trial has 3 display phases (3 win.flip() calls):
+#   FLIP A: Fixation only
+#   FLIP B: Cues (stimuli) + wait for key response
+#   FLIP C: Feedback (reward, RT, etc.)
+
 for trial_in_session in range(n_trials):
-    # Get pre-assigned position-to-cue mapping for this trial
+    # -------------------------------------------------------------------------
+    # position_to_cue: dict mapping position_index -> cue_number (or None)
+    #   Keys: 0,1,2,3 = screen positions (0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right)
+    #   Values: 1,2,3,4 = cue/color (1=Red, 2=Green, 3=Blue, 4=Yellow) or None if no cue there
+    #   Example Session 1: {0: 3, 1: None, 2: None, 3: None}  → only Blue circle at center
+    #   Example Session 2: {0: 1, 1: 4, 2: None, 3: None}     → Red top-right, Yellow top-left
+    # -------------------------------------------------------------------------
     position_to_cue = trial_cue_positions[trial_index]
 
-    # Get list of cues shown in this trial (for reward calculation)
+    # cues_shown: list of cue numbers actually displayed this trial
+    #   Example: [3] for Session 1 single cue; [1, 4] for two cues
     cues_shown = [cue for cue in position_to_cue.values() if cue is not None]
 
-    # Show fixation
+    # =========================================================================
+    # FLIP A: FIXATION SCREEN
+    # =========================================================================
+    # Presented: Black fixation dot at center (nothing else)
+    # Duration: FIXATION_WAIT_TIME (1.0 s)
     fixation.draw()
     win.flip()
     core.wait(FIXATION_WAIT_TIME)
 
-    # Reset clock before showing cues
     clock.reset()
 
+    # Session 1: single cue at center + color map at bottom
+    # Session 2+: 1–2 cues at fixed positions (no color map)
     is_session1 = not PRAC_SHOW_ALL_TARGETS[session_idx]
     show_color_map = PRAC_SHOW_COLOR_RESPONSE_MAP[session_idx]
 
-    # Set reward numbers in circles (only show numbers at positions where cues are assigned)
+    # Set reward digit (1–4) in each circle's text stim. Only positions with a cue get text.
     for pos_idx, (outer, inner, text) in enumerate(cue_stimuli):
-        cue_num = position_to_cue[pos_idx]  # Get cue number at this position (or None)
+        cue_num = position_to_cue[pos_idx]  # e.g. 3 for Blue, or None
         if cue_num is not None:
-            text.setText(str(CUE_VALUE[cue_num - 1]))  # Show reward value for this cue
+            text.setText(str(CUE_VALUE[cue_num - 1]))  # e.g. cue 3 → "3" (CUE_VALUE[2])
         else:
-            text.setText("")  # No cue at this position, no number
+            text.setText("")
 
-    # Session 1: single cue at center; Session 2+: cues at fixed positions
+    # =========================================================================
+    # FLIP B: CUE/STIMULUS SCREEN (stays until keypress or timeout)
+    # =========================================================================
+    # Presented:
+    #   Session 1: One colored circle at center + digit (1–4) + 4 color squares at bottom
+    #   Session 2+: 1–2 colored circles at fixed positions + digits
+    #   Always: Fixation dot in center
+    # -------------------------------------------------------------------------
     fixation.draw()
     if is_session1:
-        # Draw single cue at center (cue number 1-4) with reward digit
+        # cue_num: which cue/color (1–4). position_to_cue[0] = the single cue (Session 1 uses pos 0 only)
         cue_num = position_to_cue[0]
+        # cue_stimuli[cue_num-1]: the (outer, inner, text) for that color
+        #   cue_num 1→Red, 2→Green, 3→Blue, 4→Yellow
         outer, inner, text = cue_stimuli[cue_num - 1]
-        text.setText(str(CUE_VALUE[cue_num - 1]))  # Show reward value in center circle
+        text.setText(str(CUE_VALUE[cue_num - 1]))  # reward digit in center circle
         orig_pos = outer.pos
         for stim in (outer, inner, text):
-            stim.setPos((0, 0))
+            stim.setPos((0, 0))  # move to center
         outer.draw()
         inner.draw()
         text.draw()
         for stim in (outer, inner, text):
-            stim.setPos(orig_pos)
+            stim.setPos(orig_pos)  # restore for next trial
         if show_color_map:
             for rect in color_response_squares:
                 rect.draw()
@@ -389,50 +441,52 @@ for trial_in_session in range(n_trials):
             inner.draw()
             text.draw()
     win.flip()
-    cue_time = clock.getTime()  # CueTime / ColorTargetTime (cues = color targets)
+    cue_time = clock.getTime()
 
-    # Wait for response
+    # -------------------------------------------------------------------------
+    # Wait for key response (D/C/K/M or escape). Screen stays at FLIP B until then.
+    # -------------------------------------------------------------------------
     event.clearEvents()
     keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
 
-    # Calculate max reward (highest cue value among cues shown in this trial)
     max_reward = max(CUE_VALUE[c - 1] for c in cues_shown)
     actual_reward = 0
-
-    # below are defulat value for timeout
     pressed_key = ""
     rt = None
-    selected_position = None
-    selected_cue = None
-    response_time = cue_time  # default for timeout
+    selected_position = None  # 0–3 = color index (Red, Green, Blue, Yellow)
+    selected_cue = None      # 1–4 = cue number, or None
+    response_time = cue_time
 
     if keys:
-        pressed_key = keys[0][0]  # Key name
-        response_time = keys[0][1]  # Response time timestamp
-
-        # Check for escape key
+        pressed_key = keys[0][0]
+        response_time = keys[0][1]
         if pressed_key == 'escape':
             break
 
-        rt = (response_time - cue_time) * 1000  # RT in milliseconds
-        selected_position = response_keys.index(pressed_key)  # Color index (0-3): Red, Green, Blue, Yellow
+        rt = (response_time - cue_time) * 1000
+        # selected_position: which color key was pressed (0=Red/D, 1=Green/C, 2=Blue/K, 3=Yellow/M)
+        selected_position = response_keys.index(pressed_key)
         if is_session1:
-            # Session 1: response is by color; selected_position = color index → cue = color + 1
+            # Session 1: key = color choice directly. selected_position 0→cue 1, 1→cue 2, etc.
             selected_cue = selected_position + 1
         else:
-            selected_cue = position_to_cue[selected_position]  # Cue at selected position
+            # Session 2+: key = position. selected_cue = cue at that position (or None)
+            selected_cue = position_to_cue[selected_position]
 
-        # Calculate actual reward: value of the cue they selected (by color)
         if selected_cue is not None and selected_cue in cues_shown:
             actual_reward = CUE_VALUE[selected_cue - 1]
     else:
-        rt = MAX_WAIT_TIME * 1000  # Timeout
+        rt = MAX_WAIT_TIME * 1000
 
-    # Update cumulative reward
     cum_reward += actual_reward * REWARD_MONEY_FACTOR
     cum_reward = round(cum_reward, 2)
 
-    # Show feedback (match paradigm: content, colors, format)
+    # =========================================================================
+    # FLIP C: FEEDBACK SCREEN
+    # =========================================================================
+    # Presented: actual/max reward, cumulative reward, RT, block/trial info, fixation
+    # Duration: FEEDBACK_WAIT_TIME (1.5 s)
+    # -------------------------------------------------------------------------
     feedback1.setText(str(actual_reward) + " / " + str(max_reward))
     feedback1.setColor(FEEDBACK_ZERO_REWARD_COLOR if actual_reward == 0 else FEEDBACK_POS_REWARD_COLOR)
     feedback2.setText("%.2f" % cum_reward)
@@ -472,7 +526,11 @@ for trial_in_session in range(n_trials):
 
     trial_index += 1
 
-# End message
+# =============================================================================
+# FLIP 4: END MESSAGE
+# =============================================================================
+# Presented: "Demo complete! Press any key to exit"
+# Waits for: Any key before closing
 end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=FEEDBACK_LETTER_SIZE_DEG)
 end_text.draw()
 win.flip()
