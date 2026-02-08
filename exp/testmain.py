@@ -98,8 +98,8 @@ MULTI_SAMPLE = True   # same as defult value, Anti-aliasing for smooth edges (pa
 NUM_SAMPLES = 4      # Samples per pixel when multiSample enabled
 CIRCLE_EDGES = 200   # Paradigm uses edges=200 for smooth circles (default ~32 is jagged)
 
-# Cue values: Cue 1=1pt, Cue 2=2pt, Cue 3=3pt, Cue 4=4pt
-CUE_VALUE = [1, 2, 3, 4]
+# Reward values (points) per cue: cue 1→1pt, cue 2→2pt, cue 3→3pt, cue 4→4pt
+CUE_REWARD_VALUES = [1, 2, 3, 4]
 
 # Color-to-key mapping: Red→D, Green→C, Blue→K, Yellow→M
 # Position i has fixed color: 0=Red, 1=Green, 2=Blue, 3=Yellow (from STIMULUS_TARGET_COLORS_RGB)
@@ -119,7 +119,7 @@ SESSION = int(session_dlg.data[0])  # 1-based session number
 
 def _build_trial_row(
     *,
-    position_to_cue,
+    position_to_cueid,
     cues_shown,
     selected_position,
     selected_cue,
@@ -136,8 +136,8 @@ def _build_trial_row(
 ):
     """Build a trial data row """
     # Cue layout: 4-digit strings (position 0..3)
-    cues = [position_to_cue[i] or 0 for i in range(NUM_POSITIONS)]
-    cue_vals = [CUE_VALUE[c - 1] if c else 0 for c in cues]
+    cues = [position_to_cueid[i] or 0 for i in range(NUM_POSITIONS)]
+    cue_vals = [CUE_REWARD_VALUES[c - 1] if c else 0 for c in cues]
     sorted_cues = sorted(cues)
     cue_ranks = [NUM_POSITIONS - sorted_cues.index(cues[i]) for i in range(NUM_POSITIONS)]
 
@@ -146,7 +146,7 @@ def _build_trial_row(
     has_response = sel is not None
     resp_loc = "".join("1" if i == sel else "0" for i in range(NUM_POSITIONS)) if has_response else "0000"
     point_target = (sel + 1) if has_response else 0
-    sel_cue = position_to_cue[sel] if has_response else None
+    sel_cue = position_to_cueid[sel] if has_response else None
 
     rt_sec = (response_time - cue_time) if (keys and pressed_key != "escape") else (MAX_WAIT_TIME if not keys else 0.0)
     late = rt_sec > RESPONSE_DEADLINE
@@ -155,7 +155,7 @@ def _build_trial_row(
     acc = 1 if actual_reward == max_reward and max_reward > 0 else 0
     cue_exp = sel_cue if (has_response and sel_cue) else 0
     cue_rank_resp = cue_ranks[sel] if (has_response and sel_cue) else 0
-    exp_reward = CUE_VALUE[cue_exp - 1] if cue_exp > 0 else 0
+    exp_reward = CUE_REWARD_VALUES[cue_exp - 1] if cue_exp > 0 else 0
 
     cond = f"{len(cues_shown)}cue"
 
@@ -276,7 +276,7 @@ for i in range(NUM_POSITIONS):
 
 # -----------------------------------------------------------------------------
 # trial_cue_positions: list of dicts, one per trial
-#   Each dict = position_to_cue: {0: cue_or_None, 1: ..., 2: ..., 3: ...}
+#   Each dict = position_to_cueid: {0: cue_or_None, 1: ..., 2: ..., 3: ...}
 #   Session 1: each trial has one cue at position 0 (drawn at center)
 #   Session 2+: each trial has 1–2 cues at random positions
 # -----------------------------------------------------------------------------
@@ -293,14 +293,14 @@ for _ in range(n_trials):
         cue = random.choice([1, 2, 3, 4])
         cues = [cue]
         available_positions = [0]
-    position_to_cue = {}
+    position_to_cueid = {}
     for pos_idx in range(4):
         if pos_idx in available_positions:
             cue_idx = available_positions.index(pos_idx)
-            position_to_cue[pos_idx] = cues[cue_idx]
+            position_to_cueid[pos_idx] = cues[cue_idx]
         else:
-            position_to_cue[pos_idx] = None
-    trial_cue_positions.append(position_to_cue)
+            position_to_cueid[pos_idx] = None
+    trial_cue_positions.append(position_to_cueid)
 
 # Fixation point (match paradigm: visual.Circle, size=FixationSize, FixationPointColor)
 fixation = visual.Circle(
@@ -372,17 +372,17 @@ first_trial_save = True  # Write header on first trial
 
 for trial_in_session in range(n_trials):
     # -------------------------------------------------------------------------
-    # position_to_cue: dict mapping position_index -> cue_number (or None)
+    # position_to_cueid: dict mapping position_index -> cue_id (or None)
     #   Keys: 0,1,2,3 = screen positions (0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right)
     #   Values: 1,2,3,4 = cue/color (1=Red, 2=Green, 3=Blue, 4=Yellow) or None if no cue there
     #   Example Session 1: {0: 3, 1: None, 2: None, 3: None}  → only Blue circle at center
     #   Example Session 2: {0: 1, 1: 4, 2: None, 3: None}     → Red top-right, Yellow top-left
     # -------------------------------------------------------------------------
-    position_to_cue = trial_cue_positions[trial_index]
+    position_to_cueid = trial_cue_positions[trial_index]
 
-    # cues_shown: list of cue numbers actually displayed this trial
+    # cues_shown: list of cue_ids actually displayed this trial
     #   Example: [3] for Session 1 single cue; [1, 4] for two cues
-    cues_shown = [cue for cue in position_to_cue.values() if cue is not None]
+    cues_shown = [cue for cue in position_to_cueid.values() if cue is not None]
 
     # =========================================================================
     # FLIP A: FIXATION SCREEN
@@ -402,9 +402,9 @@ for trial_in_session in range(n_trials):
 
     # Set reward digit (1–4) in each circle's text stim. Only positions with a cue get text.
     for pos_idx, (outer, inner, text) in enumerate(cue_stimuli):
-        cue_num = position_to_cue[pos_idx]  # e.g. 3 for Blue, or None
-        if cue_num is not None:
-            text.setText(str(CUE_VALUE[cue_num - 1]))  # e.g. cue 3 → "3" (CUE_VALUE[2])
+        cue_id = position_to_cueid[pos_idx]  # e.g. 3 for Blue, or None
+        if cue_id is not None:
+            text.setText(str(CUE_REWARD_VALUES[cue_id - 1]))  # e.g. cue 3 → "3" (CUE_REWARD_VALUES[2])
         else:
             text.setText("")
 
@@ -418,12 +418,12 @@ for trial_in_session in range(n_trials):
     # -------------------------------------------------------------------------
     fixation.draw()
     if is_session1:
-        # cue_num: which cue/color (1–4). position_to_cue[0] = the single cue (Session 1 uses pos 0 only)
-        cue_num = position_to_cue[0]
-        # cue_stimuli[cue_num-1]: the (outer, inner, text) for that color
-        #   cue_num 1→Red, 2→Green, 3→Blue, 4→Yellow
-        outer, inner, text = cue_stimuli[cue_num - 1]
-        text.setText(str(CUE_VALUE[cue_num - 1]))  # reward digit in center circle
+        # cue_id: which cue/color (1–4). position_to_cueid[0] = the single cue (Session 1 uses pos 0 only)
+        cue_id = position_to_cueid[0]
+        # cue_stimuli[cue_id-1]: the (outer, inner, text) for that color
+        #   cue_id 1→Red, 2→Green, 3→Blue, 4→Yellow
+        outer, inner, text = cue_stimuli[cue_id - 1]
+        text.setText(str(CUE_REWARD_VALUES[cue_id - 1]))  # reward digit in center circle
         orig_pos = outer.pos
         for stim in (outer, inner, text):
             stim.setPos((0, 0))  # move to center
@@ -449,12 +449,12 @@ for trial_in_session in range(n_trials):
     event.clearEvents()
     keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
 
-    max_reward = max(CUE_VALUE[c - 1] for c in cues_shown)
+    max_reward = max(CUE_REWARD_VALUES[c - 1] for c in cues_shown)
     actual_reward = 0
     pressed_key = ""
     rt = None
     selected_position = None  # 0–3 = color index (Red, Green, Blue, Yellow)
-    selected_cue = None      # 1–4 = cue number, or None
+    selected_cue = None      # 1–4 = cue_id of selected cue, or None
     response_time = cue_time
 
     if keys:
@@ -471,10 +471,10 @@ for trial_in_session in range(n_trials):
             selected_cue = selected_position + 1
         else:
             # Session 2+: key = position. selected_cue = cue at that position (or None)
-            selected_cue = position_to_cue[selected_position]
+            selected_cue = position_to_cueid[selected_position]
 
         if selected_cue is not None and selected_cue in cues_shown:
-            actual_reward = CUE_VALUE[selected_cue - 1]
+            actual_reward = CUE_REWARD_VALUES[selected_cue - 1]
     else:
         rt = MAX_WAIT_TIME * 1000
 
@@ -504,7 +504,7 @@ for trial_in_session in range(n_trials):
 
     # Build paradigm-style trial row
     row = _build_trial_row(
-        position_to_cue=position_to_cue,
+        position_to_cueid=position_to_cueid,
         cues_shown=cues_shown,
         selected_position=selected_position,
         selected_cue=selected_cue,
