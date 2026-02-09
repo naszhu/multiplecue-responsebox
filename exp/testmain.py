@@ -111,10 +111,17 @@ NUM_POSITIONS = 4
 # Session dialog: run one session per launch
 session_dlg = gui.Dlg(title="CCRP Session")
 session_dlg.addField("Session", initial=1, choices=[1, 2, 3, 4, 5])
+session_dlg.addField(
+    "Color map layout (Session 1)",
+    initial="horizontal",
+    choices=["horizontal", "keyboard"],
+    tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M key positions",
+)
 session_dlg.show()
 if not session_dlg.OK:
     raise SystemExit("Session dialog cancelled")
 SESSION = int(session_dlg.data[0])  # 1-based session number
+COLOR_MAP_LAYOUT = session_dlg.data[1]  # "horizontal" or "keyboard"
 
 
 def _build_trial_row(
@@ -162,6 +169,7 @@ def _build_trial_row(
     return {
         "ExperimentName": EXPERIMENT_NAME,
         "ExperimentNumber": EXPERIMENT_NUMBER,
+        "ColorMapLayout": COLOR_MAP_LAYOUT,
         "Subject": "",
         "Session": session + 1,
         "Block": session + 1,
@@ -260,16 +268,39 @@ for i, pos in enumerate(positions):
 
 # color_response_squares: 4 colored Rects at bottom (Session 1 only)
 #   Index 0=Red, 1=Green, 2=Blue, 3=Yellow. Maps colors to key positions.
+#   Layout "horizontal": 4 boxes in a row (Red, Green, Blue, Yellow left→right).
+#   Layout "keyboard": relative positions like D/C/K/M - D above C (left), K above M (right), staggered.
+def _color_map_positions(layout: str):
+    """Return (x, y) for each color index 0..3 based on layout."""
+    d = RESPONSE_COLOR_DISTANCE_DEG
+    base_y = COLOR_MAP_Y_DEG
+    if layout == "horizontal":
+        return [
+            (d * (-NUM_POSITIONS / 2 + 0.5 + i), base_y)
+            for i in range(NUM_POSITIONS)
+        ]
+    # keyboard: D above-left of C, K above-right of M. Each position written explicitly, no overlap.
+    # col_w: horizontal gap between left pair (D,C) and right pair (K,M) - larger = more space in middle.
+    row_h = d * 0.6       # vertical spacing between top and bottom row
+    col_w = d * 1.4       # horizontal spacing: left pair | gap | right pair (wider = more middle gap)
+    stagger = d * 0.35    # bottom row indent (C right of D, M left of K)
+    return [
+        (-col_w, base_y + row_h),              # 0 Red   (D) top-left
+        (-col_w + stagger, base_y - row_h),    # 1 Green (C) bottom-left, below D, shifted right
+        (col_w, base_y + row_h),               # 2 Blue  (K) top-right
+        (col_w - stagger, base_y - row_h),     # 3 Yellow(M) bottom-right, below K, shifted left
+    ]
+
+color_map_positions = _color_map_positions(COLOR_MAP_LAYOUT)
 color_response_squares = []
 for i in range(NUM_POSITIONS):
-    x = RESPONSE_COLOR_DISTANCE_DEG * (-NUM_POSITIONS / 2 + 0.5 + i)
     rect = visual.Rect(
         win,
         width=RESPONSE_COLOR_SIZE_DEG,
         height=RESPONSE_COLOR_SIZE_DEG,
         fillColor=STIMULUS_TARGET_COLORS_RGB[i],
         lineColor=None,
-        pos=(x, COLOR_MAP_Y_DEG),
+        pos=color_map_positions[i],
         units=USE_UNITS,
     )
     color_response_squares.append(rect)
