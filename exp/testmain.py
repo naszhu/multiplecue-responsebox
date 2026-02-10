@@ -26,7 +26,8 @@ MAX_SESSION = 5  # Session 1 = practice (single cue center), Session 2+ = full
 # Per-session config (index = session - 1). Session 1 = practice, 2+ = full.
 NUM_TRIALS_PER_SESSION = [20, 5, 5, 5, 5]  # Session 1: 20 single-cue, 2-5: multi-cue
 PRAC_SHOW_ALL_TARGETS = [False, True, True, True, True]  # Session 1: single cue center
-PRAC_SHOW_COLOR_RESPONSE_MAP = [True, False, False, False, False]  # Session 1: color map at bottom
+PRAC_SHOW_COLOR_RESPONSE_MAP = [True, True, False, False, False]  # Session 1–2: color map at bottom
+PRAC_SINGLE_DIGIT_ONLY = [False, True, False, False, False]  # Session 2: 4 circles, only 1 has digit
 MAX_WAIT_TIME = 5.0
 FIXATION_WAIT_TIME = 1.0
 FEEDBACK_WAIT_TIME = 1.5
@@ -112,10 +113,10 @@ NUM_POSITIONS = 4
 session_dlg = gui.Dlg(title="CCRP Session")
 session_dlg.addField("Session", initial=1, choices=[1, 2, 3, 4, 5])
 session_dlg.addField(
-    "Color map layout (Session 1)",
+    "Color map layout",
     initial="horizontal",
     choices=["horizontal", "keyboard"],
-    tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M key positions",
+    tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Session 1 & 2)",
 )
 session_dlg.show()
 if not session_dlg.OK:
@@ -307,31 +308,49 @@ for i in range(NUM_POSITIONS):
 
 # -----------------------------------------------------------------------------
 # trial_cue_positions: list of dicts, one per trial
-#   Each dict = position_to_cueid: {0: cue_or_None, 1: ..., 2: ..., 3: ...}
-#   Session 1: each trial has one cue at position 0 (drawn at center)
-#   Session 2+: each trial has 1–2 cues at random positions
+#   Session 1: {0: cue_id, 1: None, 2: None, 3: None} — one cue at center
+#   Session 2: {0: 1, 1: 2, 2: 3, 3: 4} + digit_position, digit_value — 4 circles, 1 digit
+#   Session 3+: 1–2 cues at random positions
 # -----------------------------------------------------------------------------
 session_idx = SESSION - 1
 n_trials = NUM_TRIALS_PER_SESSION[session_idx]
 total_trials = n_trials
 trial_cue_positions = []
 for _ in range(n_trials):
-    if PRAC_SHOW_ALL_TARGETS[session_idx]:
+    if PRAC_SINGLE_DIGIT_ONLY[session_idx]:
+        # Session 2: all 4 circles (Red, Green, Blue, Yellow at pos 0–3), only 1 has digit
+        position_to_cueid = {0: 1, 1: 2, 2: 3, 3: 4}
+        digit_position = random.randint(0, 3)
+        digit_value = random.randint(1, 4)
+        trial_cue_positions.append({
+            "position_to_cueid": position_to_cueid,
+            "digit_position": digit_position,
+            "digit_value": digit_value,
+        })
+    elif PRAC_SHOW_ALL_TARGETS[session_idx]:
         num_cues = random.randint(1, 2)
         cues = random.sample([1, 2, 3, 4], num_cues)
         available_positions = random.sample([0, 1, 2, 3], num_cues)
+        position_to_cueid = {}
+        for pos_idx in range(4):
+            if pos_idx in available_positions:
+                cue_idx = available_positions.index(pos_idx)
+                position_to_cueid[pos_idx] = cues[cue_idx]
+            else:
+                position_to_cueid[pos_idx] = None
+        trial_cue_positions.append(position_to_cueid)
     else:
         cue = random.choice([1, 2, 3, 4])
         cues = [cue]
         available_positions = [0]
-    position_to_cueid = {}
-    for pos_idx in range(4):
-        if pos_idx in available_positions:
-            cue_idx = available_positions.index(pos_idx)
-            position_to_cueid[pos_idx] = cues[cue_idx]
-        else:
-            position_to_cueid[pos_idx] = None
-    trial_cue_positions.append(position_to_cueid)
+        position_to_cueid = {}
+        for pos_idx in range(4):
+            if pos_idx in available_positions:
+                cue_idx = available_positions.index(pos_idx)
+                position_to_cueid[pos_idx] = cues[cue_idx]
+            else:
+                position_to_cueid[pos_idx] = None
+        trial_cue_positions.append(position_to_cueid)
 
 # Fixation point (match paradigm: visual.Circle, size=FixationSize, FixationPointColor)
 fixation = visual.Circle(
@@ -402,14 +421,21 @@ first_trial_save = True  # Write header on first trial
 #   FLIP C: Feedback (reward, RT, etc.)
 
 for trial_in_session in range(n_trials):
+    trial_data = trial_cue_positions[trial_index]
+    if isinstance(trial_data, dict) and "position_to_cueid" in trial_data:
+        position_to_cueid = trial_data["position_to_cueid"]
+        digit_position = trial_data["digit_position"]
+        digit_value = trial_data["digit_value"]
+    else:
+        position_to_cueid = trial_data
+        digit_position = None
+        digit_value = None
+
     # -------------------------------------------------------------------------
     # position_to_cueid: dict mapping position_index -> cue_id (or None)
-    #   Keys: 0,1,2,3 = screen positions (0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right)
-    #   Values: 1,2,3,4 = cue/color (1=Red, 2=Green, 3=Blue, 4=Yellow) or None if no cue there
-    #   Example Session 1: {0: 3, 1: None, 2: None, 3: None}  → only Blue circle at center
-    #   Example Session 2: {0: 1, 1: 4, 2: None, 3: None}     → Red top-right, Yellow top-left
+    #   Session 1: {0: 3, 1: None, 2: None, 3: None} — one cue at center
+    #   Session 2: {0: 1, 1: 2, 2: 3, 3: 4} — all 4 circles, digit at digit_position
     # -------------------------------------------------------------------------
-    position_to_cueid = trial_cue_positions[trial_index]
 
     # cues_shown: list of cue_ids actually displayed this trial
     #   Example: [3] for Session 1 single cue; [1, 4] for two cues
@@ -426,43 +452,55 @@ for trial_in_session in range(n_trials):
 
     clock.reset()
 
-    # Session 1: single cue at center + color map at bottom
-    # Session 2+: 1–2 cues at fixed positions (no color map)
     is_session1 = not PRAC_SHOW_ALL_TARGETS[session_idx]
+    is_session2 = PRAC_SINGLE_DIGIT_ONLY[session_idx]
     show_color_map = PRAC_SHOW_COLOR_RESPONSE_MAP[session_idx]
 
-    # Set reward digit (1–4) in each circle's text stim. Only positions with a cue get text.
+    # Set reward digit (1–4) in each circle's text stim.
+    # Session 1: only the single cue gets text (set again below when drawing at center)
+    # Session 2: only digit_position gets digit_value; others get ""
+    # Session 3+: positions with a cue get their reward value
     for pos_idx, (outer, inner, text) in enumerate(cue_stimuli):
-        cue_id = position_to_cueid[pos_idx]  # e.g. 3 for Blue, or None
-        if cue_id is not None:
-            text.setText(str(CUE_REWARD_VALUES[cue_id - 1]))  # e.g. cue 3 → "3" (CUE_REWARD_VALUES[2])
+        if is_session2:
+            text.setText(str(digit_value) if pos_idx == digit_position else "")
         else:
-            text.setText("")
+            cue_id = position_to_cueid[pos_idx]
+            if cue_id is not None:
+                text.setText(str(CUE_REWARD_VALUES[cue_id - 1]))
+            else:
+                text.setText("")
 
     # =========================================================================
     # FLIP B: CUE/STIMULUS SCREEN (stays until keypress or timeout)
     # =========================================================================
     # Presented:
-    #   Session 1: One colored circle at center + digit (1–4) + 4 color squares at bottom
-    #   Session 2+: 1–2 colored circles at fixed positions + digits
+    #   Session 1: One colored circle at center + digit + color map at bottom
+    #   Session 2: 4 colored circles at positions + 1 digit + color map at bottom
+    #   Session 3+: 1–2 colored circles at fixed positions
     #   Always: Fixation dot in center
     # -------------------------------------------------------------------------
     fixation.draw()
     if is_session1:
-        # cue_id: which cue/color (1–4). position_to_cueid[0] = the single cue (Session 1 uses pos 0 only)
         cue_id = position_to_cueid[0]
-        # cue_stimuli[cue_id-1]: the (outer, inner, text) for that color
-        #   cue_id 1→Red, 2→Green, 3→Blue, 4→Yellow
         outer, inner, text = cue_stimuli[cue_id - 1]
-        text.setText(str(CUE_REWARD_VALUES[cue_id - 1]))  # reward digit in center circle
+        text.setText(str(CUE_REWARD_VALUES[cue_id - 1]))
         orig_pos = outer.pos
         for stim in (outer, inner, text):
-            stim.setPos((0, 0))  # move to center
+            stim.setPos((0, 0))
         outer.draw()
         inner.draw()
         text.draw()
         for stim in (outer, inner, text):
-            stim.setPos(orig_pos)  # restore for next trial
+            stim.setPos(orig_pos)
+        if show_color_map:
+            for rect in color_response_squares:
+                rect.draw()
+    elif is_session2:
+        # Session 2: draw all 4 circles at their positions; only one has digit
+        for outer, inner, text in cue_stimuli:
+            outer.draw()
+            inner.draw()
+            text.draw()
         if show_color_map:
             for rect in color_response_squares:
                 rect.draw()
@@ -480,7 +518,10 @@ for trial_in_session in range(n_trials):
     event.clearEvents()
     keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
 
-    max_reward = max(CUE_REWARD_VALUES[c - 1] for c in cues_shown)
+    if is_session2:
+        max_reward = digit_value
+    else:
+        max_reward = max(CUE_REWARD_VALUES[c - 1] for c in cues_shown)
     actual_reward = 0
     pressed_key = ""
     rt = None
@@ -495,17 +536,20 @@ for trial_in_session in range(n_trials):
             break
 
         rt = (response_time - cue_time) * 1000
-        # selected_position: which color key was pressed (0=Red/D, 1=Green/C, 2=Blue/K, 3=Yellow/M)
         selected_position = response_keys.index(pressed_key)
         if is_session1:
-            # Session 1: key = color choice directly. selected_position 0→cue 1, 1→cue 2, etc.
             selected_cue = selected_position + 1
+            if selected_cue in cues_shown:
+                actual_reward = CUE_REWARD_VALUES[selected_cue - 1]
+        elif is_session2:
+            # Session 2: correct = pressed key for color of circle with digit
+            selected_cue = selected_position + 1  # color at that key
+            if selected_position == digit_position:
+                actual_reward = digit_value
         else:
-            # Session 2+: key = position. selected_cue = cue at that position (or None)
             selected_cue = position_to_cueid[selected_position]
-
-        if selected_cue is not None and selected_cue in cues_shown:
-            actual_reward = CUE_REWARD_VALUES[selected_cue - 1]
+            if selected_cue is not None and selected_cue in cues_shown:
+                actual_reward = CUE_REWARD_VALUES[selected_cue - 1]
     else:
         rt = MAX_WAIT_TIME * 1000
 
