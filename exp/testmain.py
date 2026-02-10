@@ -26,7 +26,7 @@ MAX_SESSION = 5  # Session 1 = practice (single cue center), Session 2+ = full
 # Per-session config (index = session - 1). Session 1 = practice, 2+ = full.
 NUM_TRIALS_PER_SESSION = [20, 5, 5, 5, 5]  # Session 1: 20 single-cue, 2-5: multi-cue
 PRAC_SHOW_ALL_TARGETS = [False, True, True, True, True]  # Session 1: single cue center
-PRAC_SHOW_COLOR_RESPONSE_MAP = [True, True, False, False, False]  # Session 1–2: color map at bottom
+PRAC_SHOW_COLOR_RESPONSE_MAP = [True, True, True, False, False]  # Session 1–3: color map at bottom
 PRAC_SINGLE_DIGIT_ONLY = [False, True, False, False, False]  # Session 2: 4 circles, only 1 has digit
 MAX_WAIT_TIME = 5.0
 FIXATION_WAIT_TIME = 1.0
@@ -116,7 +116,7 @@ session_dlg.addField(
     "Color map layout",
     initial="horizontal",
     choices=["horizontal", "keyboard"],
-    tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Session 1 & 2)",
+    tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Session 1–3)",
 )
 session_dlg.show()
 if not session_dlg.OK:
@@ -476,7 +476,8 @@ for trial_in_session in range(n_trials):
     # Presented:
     #   Session 1: One colored circle at center + digit + color map at bottom
     #   Session 2: 4 colored circles at positions + 1 digit + color map at bottom
-    #   Session 3+: 1–2 colored circles at fixed positions
+    #   Session 3: 1–2 colored circles at positions + digits + color map at bottom
+    #   Session 4–5: 1–2 colored circles at positions + digits (no color map)
     #   Always: Fixation dot in center
     # -------------------------------------------------------------------------
     fixation.draw()
@@ -505,10 +506,14 @@ for trial_in_session in range(n_trials):
             for rect in color_response_squares:
                 rect.draw()
     else:
+        # Session 3+: 1–2 cues at positions, with color map if enabled
         for outer, inner, text in cue_stimuli:
             outer.draw()
             inner.draw()
             text.draw()
+        if show_color_map:
+            for rect in color_response_squares:
+                rect.draw()
     win.flip()
     cue_time = clock.getTime()
 
