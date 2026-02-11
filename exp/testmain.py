@@ -364,9 +364,13 @@ fixation = visual.Circle(
 )
 
 # Feedback texts (match paradigm Feedback1-4: positions, sizes, ori, opacity)
+# feedback1: main trial outcome (actual/max reward), largest text, color-coded (red=0, green>0)
 feedback1 = visual.TextStim(win, text="", pos=FEEDBACK1_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
+# feedback2: cumulative reward so far
 feedback2 = visual.TextStim(win, text="", pos=FEEDBACK2_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.6, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
+# feedback3: response time in ms
 feedback3 = visual.TextStim(win, text="", pos=FEEDBACK3_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.6, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
+# feedback4: block and trial number (e.g. "Block 1  Trial 3 / 20")
 feedback4 = visual.TextStim(win, text="", pos=FEEDBACK4_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.2, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
 
 # Instructions (InstructionLetterSize = 15*StimFactor)
@@ -567,11 +571,11 @@ for trial_in_session in range(n_trials):
     # Presented: actual/max reward, cumulative reward, RT, block/trial info, fixation
     # Duration: FEEDBACK_WAIT_TIME (1.5 s)
     # -------------------------------------------------------------------------
-    feedback1.setText(str(actual_reward) + " / " + str(max_reward))
+    feedback1.setText(str(actual_reward) + " / " + str(max_reward))  # e.g. "2 / 4"
     feedback1.setColor(FEEDBACK_ZERO_REWARD_COLOR if actual_reward == 0 else FEEDBACK_POS_REWARD_COLOR)
-    feedback2.setText("%.2f" % cum_reward)
-    feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")
-    feedback4.setText("Block  " + str(SESSION) + "               Trial  " + str(trial_index + 1) + " / " + str(total_trials))
+    feedback2.setText("%.2f" % cum_reward)  # cumulative reward
+    feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
+    feedback4.setText("Block  " + str(SESSION) + "               Trial  " + str(trial_index + 1) + " / " + str(total_trials))  # block & trial info
 
     feedback1.draw()
     feedback2.draw()
