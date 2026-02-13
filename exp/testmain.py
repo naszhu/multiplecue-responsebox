@@ -12,6 +12,7 @@ Display flow (win.flip locations):
 """
 import math
 import random
+from itertools import combinations, permutations
 from pathlib import Path
 
 import pandas as pd
@@ -22,12 +23,14 @@ logging.console.setLevel(logging.DEBUG)
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
-MAX_SESSION = 5  # Session 1 = practice (single cue center), Session 2+ = full
-# Per-session config (index = session - 1). Session 1 = practice, 2+ = full.
-NUM_TRIALS_PER_SESSION = [20, 5, 5, 5, 5]  # Session 1: 20 single-cue, 2-5: multi-cue
-PRAC_SHOW_ALL_TARGETS = [False, True, True, True, True]  # Session 1: single cue center
-PRAC_SHOW_COLOR_RESPONSE_MAP = [True, True, True, False, False]  # Session 1–3: color map at bottom
-PRAC_SINGLE_DIGIT_ONLY = [False, True, False, False, False]  # Session 2: 4 circles, only 1 has digit
+MAX_SESSION = 6  # Session 6+ uses experimental config (4 blocks × 50 trials)
+# Per-session config (index = session - 1). Session 6+ uses same config as session 6.
+# Sessions 1 & 2: 5 blocks × 20 trials = 100; Session 3 & 4: 2 blocks × 30 = 60; Session 5: 2 × 50 = 100; Session 6+: 4 × 50 = 200
+NUM_BLOCKS_PER_SESSION = [5, 5, 2, 2, 2, 4]   # blocks per session (6+ uses index 5)
+NUM_TRIALS_PER_BLOCK = [20, 20, 30, 30, 50, 50]  # trials per block (4 cue×5 reps, 10 cue×3 reps, 10 cue×5 reps)
+PRAC_SHOW_ALL_TARGETS = [False, True, True, True, True, True]  # Session 1: single cue center
+PRAC_SHOW_COLOR_RESPONSE_MAP = [True, True, True, False, False, False]  # Session 1–3: color map at bottom
+PRAC_SINGLE_DIGIT_ONLY = [False, True, False, False, False, False]  # Session 2: 4 circles, only 1 has digit
 MAX_WAIT_TIME = 2.0
 FIXATION_WAIT_TIME = 1.0
 FEEDBACK_WAIT_TIME = 1.5
@@ -109,9 +112,9 @@ COLOR_KEYS = ['d', 'c', 'k', 'm']  # key for position/color 0,1,2,3
 NUM_POSITIONS = 4
 
 
-# Session dialog: run one session per launch
+# Session dialog: run one session per launch (6+ uses experimental config: 4 blocks × 50 trials)
 session_dlg = gui.Dlg(title="CCRP Session")
-session_dlg.addField("Session", initial=1, choices=[1, 2, 3, 4, 5])
+session_dlg.addField("Session", initial=1, choices=[1, 2, 3, 4, 5, 6])
 session_dlg.addField(
     "Color map layout",
     initial="horizontal",
@@ -123,6 +126,11 @@ if not session_dlg.OK:
     raise SystemExit("Session dialog cancelled")
 SESSION = int(session_dlg.data[0])  # 1-based session number
 COLOR_MAP_LAYOUT = session_dlg.data[1]  # "horizontal" or "keyboard"
+
+
+def _session_config_idx(session: int) -> int:
+    """Return config index for session (1-based). Session 6+ uses same config as session 6."""
+    return min(session - 1, 5)
 
 
 def _build_trial_row(
@@ -140,6 +148,7 @@ def _build_trial_row(
     max_reward,
     cum_reward,
     session,
+    block,
     trial_index,
 ):
     """Build a trial data row """
@@ -173,7 +182,7 @@ def _build_trial_row(
         "ColorMapLayout": COLOR_MAP_LAYOUT,
         "Subject": "",
         "Session": session + 1,
-        "Block": session + 1,
+        "Block": block,
         "Trial": trial_index + 1,
         "WarmUpTrial": 0,
         "CueCondition": cond,
@@ -307,50 +316,92 @@ for i in range(NUM_POSITIONS):
     color_response_squares.append(rect)
 
 # -----------------------------------------------------------------------------
-# trial_cue_positions: list of dicts, one per trial
-#   Session 1: {0: cue_id, 1: None, 2: None, 3: None} — one cue at center
-#   Session 2: {0: 1, 1: 2, 2: 3, 3: 4} + digit_position, digit_value — 4 circles, 1 digit
-#   Session 3+: 1–2 cues at random positions
+# Trial conditions: all stimuli (color position, reward, etc.) decided BEFORE experiment.
+# Unified rule: enumerate all conditions, then select & shuffle order only.
 # -----------------------------------------------------------------------------
 session_idx = SESSION - 1
-n_trials = NUM_TRIALS_PER_SESSION[session_idx]
-total_trials = n_trials
-trial_cue_positions = []
-for _ in range(n_trials):
-    if PRAC_SINGLE_DIGIT_ONLY[session_idx]:
-        # Session 2: all 4 circles (Red, Green, Blue, Yellow at pos 0–3), only 1 has digit
-        position_to_cueid = {0: 1, 1: 2, 2: 3, 3: 4}
-        digit_position = random.randint(0, 3)
-        digit_value = random.randint(1, 4)
-        trial_cue_positions.append({
-            "position_to_cueid": position_to_cueid,
-            "digit_position": digit_position,
-            "digit_value": digit_value,
-        })
-    elif PRAC_SHOW_ALL_TARGETS[session_idx]:
-        num_cues = random.randint(1, 2)
-        cues = random.sample([1, 2, 3, 4], num_cues)
-        available_positions = random.sample([0, 1, 2, 3], num_cues)
-        position_to_cueid = {}
-        for pos_idx in range(4):
-            if pos_idx in available_positions:
-                cue_idx = available_positions.index(pos_idx)
-                position_to_cueid[pos_idx] = cues[cue_idx]
-            else:
-                position_to_cueid[pos_idx] = None
-        trial_cue_positions.append(position_to_cueid)
-    else:
-        cue = random.choice([1, 2, 3, 4])
-        cues = [cue]
-        available_positions = [0]
-        position_to_cueid = {}
-        for pos_idx in range(4):
-            if pos_idx in available_positions:
-                cue_idx = available_positions.index(pos_idx)
-                position_to_cueid[pos_idx] = cues[cue_idx]
-            else:
-                position_to_cueid[pos_idx] = None
-        trial_cue_positions.append(position_to_cueid)
+config_idx = _session_config_idx(SESSION)
+n_blocks = NUM_BLOCKS_PER_SESSION[config_idx]
+n_trials_per_block = NUM_TRIALS_PER_BLOCK[config_idx]
+total_trials = n_blocks * n_trials_per_block
+
+
+def _enumerate_conditions_s1() -> list:
+    """Session 1: 4 conditions — single cue (1–4) at center."""
+    return [{0: c, 1: None, 2: None, 3: None} for c in range(1, 5)]
+
+
+def _enumerate_conditions_s2() -> list:
+    """Session 2: 4×4×24 = 384 conditions — digit_position × digit_value × color permutation."""
+    conditions = []
+    for digit_pos in range(4):
+        for digit_val in range(1, 5):
+            for color_perm in permutations([1, 2, 3, 4]):
+                position_to_cueid = {i: color_perm[i] for i in range(4)}
+                conditions.append({
+                    "position_to_cueid": position_to_cueid,
+                    "digit_position": digit_pos,
+                    "digit_value": digit_val,
+                })
+    return conditions
+
+
+def _enumerate_conditions_s3plus() -> list:
+    """Session 3+: 16 single-cue + 72 two-cue = 88 conditions — fully specified."""
+    conditions = []
+    # 4 positions × 4 cue values = 16 single-cue
+    for pos in range(4):
+        for cue_id in range(1, 5):
+            conditions.append({i: (cue_id if i == pos else None) for i in range(4)})
+    # 6 position pairs × 12 cue assignments = 72 two-cue
+    for pos_a, pos_b in combinations(range(4), 2):
+        for cue_a, cue_b in permutations([1, 2, 3, 4], 2):
+            position_to_cueid = {0: None, 1: None, 2: None, 3: None}
+            position_to_cueid[pos_a] = cue_a
+            position_to_cueid[pos_b] = cue_b
+            conditions.append(position_to_cueid)
+    return conditions
+
+#build trial list for session 1 and session 3+
+def _build_trial_list_from_conditions(condition_set: list, n_blocks: int, n_per_block: int) -> list:
+    """Select conditions with reps, shuffle order. No random decisions within conditions."""
+    n_total = n_blocks * n_per_block
+    indices = [random.randint(0, len(condition_set) - 1) for _ in range(n_total)]
+    trials = [condition_set[i] for i in indices]
+    random.shuffle(trials)
+    return trials
+
+# build trial list for session 2
+def _build_trial_list_s2(condition_set: list, n_blocks: int, n_per_block: int) -> list:
+    """Session 2: 4 digit positions × 5 reps = 20 per block. Stratified sampling."""
+    # Group by digit_position (conditions 0–95: pos 0, 96–191: pos 1, etc.)
+    per_pos = len(condition_set) // 4
+    trials = []
+    for _ in range(n_blocks):
+        block_trials = []
+        for digit_pos in range(4):
+            start, end = digit_pos * per_pos, (digit_pos + 1) * per_pos
+            pool = condition_set[start:end]
+            block_trials.extend(random.sample(pool, min(n_per_block // 4, len(pool))))
+        random.shuffle(block_trials)
+        trials.extend(block_trials)
+    return trials
+
+
+# Enumerate all conditions once, before experiment start
+if PRAC_SINGLE_DIGIT_ONLY[config_idx]:
+    all_conditions = _enumerate_conditions_s2()
+    trial_cue_positions = _build_trial_list_s2(all_conditions, n_blocks, n_trials_per_block)
+elif not PRAC_SHOW_ALL_TARGETS[config_idx]:
+    all_conditions = _enumerate_conditions_s1()
+    trial_cue_positions = _build_trial_list_from_conditions(
+        all_conditions, n_blocks, n_trials_per_block
+    )
+else:
+    all_conditions = _enumerate_conditions_s3plus()
+    trial_cue_positions = _build_trial_list_from_conditions(
+        all_conditions, n_blocks, n_trials_per_block
+    )
 
 # Fixation point (match paradigm: visual.Circle, size=FixationSize, FixationPointColor)
 fixation = visual.Circle(
@@ -389,6 +440,8 @@ def _load_session_instruction(session: int) -> str:
     """Load instruction text for session (1-based). Fallback to default if file missing."""
     if session in (4, 5):
         path = INSTRUCTION_DIR / "CCRP instruction ses 4-5.txt"
+    elif session >= 6:
+        path = INSTRUCTION_DIR / "CCRP instruction exp ses.txt"
     else:
         path = INSTRUCTION_DIR / f"CCRP instruction ses {session}.txt"
     if path.exists():
@@ -424,7 +477,7 @@ first_trial_save = True  # Write header on first trial
 #   FLIP B: Cues (stimuli) + wait for key response
 #   FLIP C: Feedback (reward, RT, etc.)
 
-for trial_in_session in range(n_trials):
+for trial_in_session in range(total_trials):
     trial_data = trial_cue_positions[trial_index]
     if isinstance(trial_data, dict) and "position_to_cueid" in trial_data:
         position_to_cueid = trial_data["position_to_cueid"]
@@ -456,9 +509,9 @@ for trial_in_session in range(n_trials):
 
     clock.reset()
 
-    is_session1 = not PRAC_SHOW_ALL_TARGETS[session_idx]
-    is_session2 = PRAC_SINGLE_DIGIT_ONLY[session_idx]
-    show_color_map = PRAC_SHOW_COLOR_RESPONSE_MAP[session_idx]
+    is_session1 = not PRAC_SHOW_ALL_TARGETS[config_idx]
+    is_session2 = PRAC_SINGLE_DIGIT_ONLY[config_idx]
+    show_color_map = PRAC_SHOW_COLOR_RESPONSE_MAP[config_idx]
 
     # Set reward digit (1–4) in each circle's text stim.
     # Session 1: only the single cue gets text (set again below when drawing at center)
@@ -501,11 +554,20 @@ for trial_in_session in range(n_trials):
             for rect in color_response_squares:
                 rect.draw()
     elif is_session2:
-        # Session 2: draw all 4 circles at their positions; only one has digit
-        for outer, inner, text in cue_stimuli:
+        # Session 2: colors shuffled to positions each trial (match paradigm); only one has digit
+        for pos_idx in range(4):
+            cue_id = position_to_cueid[pos_idx]
+            outer, inner, text = cue_stimuli[cue_id - 1]
+            target_pos = positions[pos_idx]
+            text.setText(str(digit_value) if pos_idx == digit_position else "")
+            orig_positions = [outer.pos, inner.pos, text.pos]
+            for stim in (outer, inner, text):
+                stim.setPos(target_pos)
             outer.draw()
             inner.draw()
             text.draw()
+            for stim, orig in zip((outer, inner, text), orig_positions):
+                stim.setPos(orig)
         if show_color_map:
             for rect in color_response_squares:
                 rect.draw()
@@ -551,9 +613,9 @@ for trial_in_session in range(n_trials):
             if selected_cue in cues_shown:
                 actual_reward = CUE_REWARD_VALUES[selected_cue - 1]
         elif is_session2:
-            # Session 2: correct = pressed key for color of circle with digit
-            selected_cue = selected_position + 1  # color at that key
-            if selected_position == digit_position:
+            # Session 2: correct = pressed key for color of circle with digit (colors shuffled to positions)
+            selected_cue = selected_position + 1  # color they selected (1–4)
+            if selected_cue == position_to_cueid[digit_position]:
                 actual_reward = digit_value
         else:
             selected_cue = position_to_cueid[selected_position]
@@ -575,7 +637,9 @@ for trial_in_session in range(n_trials):
     feedback1.setColor(FEEDBACK_ZERO_REWARD_COLOR if actual_reward == 0 else FEEDBACK_POS_REWARD_COLOR)
     feedback2.setText("%.2f" % cum_reward)  # cumulative reward
     feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
-    feedback4.setText("Block  " + str(SESSION) + "               Trial  " + str(trial_index + 1) + " / " + str(total_trials))  # block & trial info
+    current_block = (trial_index // n_trials_per_block) + 1
+    trial_in_block = (trial_index % n_trials_per_block) + 1
+    feedback4.setText("Block  " + str(current_block) + " / " + str(n_blocks) + "     Trial  " + str(trial_in_block) + " / " + str(n_trials_per_block))  # block & trial info
 
     feedback1.draw()
     feedback2.draw()
@@ -587,6 +651,7 @@ for trial_in_session in range(n_trials):
     end_trial_time = clock.getTime()
 
     # Build paradigm-style trial row
+    current_block = (trial_index // n_trials_per_block) + 1
     row = _build_trial_row(
         position_to_cueid=position_to_cueid,
         cues_shown=cues_shown,
@@ -601,6 +666,7 @@ for trial_in_session in range(n_trials):
         max_reward=max_reward,
         cum_reward=cum_reward,
         session=session_idx,
+        block=current_block,
         trial_index=trial_index,
     )
 
