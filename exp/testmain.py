@@ -24,13 +24,16 @@ logging.console.setLevel(logging.DEBUG)
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
 MAX_SESSION = 6  # Session 6+ uses experimental config (4 blocks × 50 trials)
-# Per-session config (index = session - 1). Session 6+ uses same config as session 6.
-# Sessions 1 & 2: 5 blocks × 20 trials = 100; Session 3 & 4: 2 blocks × 30 = 60; Session 5: 2 × 50 = 100; Session 6+: 4 × 50 = 200
-NUM_BLOCKS_PER_SESSION = [5, 5, 2, 2, 2, 4]   # blocks per session (6+ uses index 5)
-NUM_TRIALS_PER_BLOCK = [20, 20, 30, 30, 50, 50]  # trials per block (4 cue×5 reps, 10 cue×3 reps, 10 cue×5 reps)
-PRAC_SHOW_ALL_TARGETS = [False, True, True, True, True, True]  # Session 1: single cue center
-PRAC_SHOW_COLOR_RESPONSE_MAP = [True, True, True, False, False, False]  # Session 1–3: color map at bottom
-PRAC_SINGLE_DIGIT_ONLY = [False, True, False, False, False, False]  # Session 2: 4 circles, only 1 has digit
+# Per-session config (index = session - 1). Session 6+ uses config index 5.
+# S1: center only, color map. S2: 4 circles 1 digit, color map. S3: 1–2 cues, color map. S4–5: 1–2 cues, no map.
+SESSION_CONFIG = [
+    {"cue_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": True, "single_digit": False, "color_map": True},
+    {"cue_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": False, "single_digit": True, "color_map": True},
+    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "single_digit": False, "color_map": True},
+    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "single_digit": False, "color_map": False},
+    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 50, "center": False, "single_digit": False, "color_map": False},
+    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "single_digit": False, "color_map": False},
+]
 MAX_WAIT_TIME = 2.0
 FIXATION_WAIT_TIME = 1.0
 FEEDBACK_WAIT_TIME = 1.5
@@ -119,7 +122,7 @@ session_dlg.addField(
     "Color map layout",
     initial="horizontal",
     choices=["horizontal", "keyboard"],
-    tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Session 1–3)",
+    tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Sessions 1–3)",
 )
 session_dlg.show()
 if not session_dlg.OK:
@@ -316,92 +319,59 @@ for i in range(NUM_POSITIONS):
     color_response_squares.append(rect)
 
 # -----------------------------------------------------------------------------
-# Trial conditions: all stimuli (color position, reward, etc.) decided BEFORE experiment.
-# Unified rule: enumerate all conditions, then select & shuffle order only.
+# Trial generation: cue-balanced; color/reward sampled randomly. Same logic all sessions.
+# All conditions enumerated BEFORE experiment.
 # -----------------------------------------------------------------------------
 session_idx = SESSION - 1
 config_idx = _session_config_idx(SESSION)
-n_blocks = NUM_BLOCKS_PER_SESSION[config_idx]
-n_trials_per_block = NUM_TRIALS_PER_BLOCK[config_idx]
+cfg = SESSION_CONFIG[config_idx]
+n_blocks = cfg["n_blocks"]
+n_trials_per_block = cfg["n_per_block"]
 total_trials = n_blocks * n_trials_per_block
 
 
-def _enumerate_conditions_s1() -> list:
-    """Session 1: 4 conditions — single cue (1–4) at center."""
-    return [{0: c, 1: None, 2: None, 3: None} for c in range(1, 5)]
+def _pool_for_cue(cue, cfg: dict) -> list:
+    """Enumerate variants for a cue condition (color perm, reward pos)."""
+    if cfg["single_digit"]:
+        # cue [1] = Red has digit; enumerate digit_pos, digit_val, color perm (digit_pos has cue[0])
+        out = []
+        for digit_pos in range(4):
+            for digit_val in range(1, 5):
+                other = [c for c in [1, 2, 3, 4] if c != cue[0]]
+                for perm in permutations(other):
+                    d = {0: None, 1: None, 2: None, 3: None}
+                    d[digit_pos] = cue[0]
+                    for i, pos in enumerate(p for p in range(4) if p != digit_pos):
+                        d[pos] = perm[i]
+                    out.append({"position_to_cueid": d, "digit_position": digit_pos, "digit_value": digit_val})
+        return out
+    if cfg["center"]:
+        return [{0: cue[0], 1: None, 2: None, 3: None}]
+    if len(cue) == 1:
+        return [{i: (cue[0] if i == p else None) for i in range(4)} for p in range(4)]
+    a, b = cue[0], cue[1]
+    out = []
+    for pa, pb in permutations(range(4), 2):
+        d = {0: None, 1: None, 2: None, 3: None}
+        d[pa], d[pb] = a, b
+        out.append(d)
+    return out
 
 
-def _enumerate_conditions_s2() -> list:
-    """Session 2: 4×4×24 = 384 conditions — digit_position × digit_value × color permutation."""
-    conditions = []
-    for digit_pos in range(4):
-        for digit_val in range(1, 5):
-            for color_perm in permutations([1, 2, 3, 4]):
-                position_to_cueid = {i: color_perm[i] for i in range(4)}
-                conditions.append({
-                    "position_to_cueid": position_to_cueid,
-                    "digit_position": digit_pos,
-                    "digit_value": digit_val,
-                })
-    return conditions
-
-
-def _enumerate_conditions_s3plus() -> list:
-    """Session 3+: 16 single-cue + 72 two-cue = 88 conditions — fully specified."""
-    conditions = []
-    # 4 positions × 4 cue values = 16 single-cue
-    for pos in range(4):
-        for cue_id in range(1, 5):
-            conditions.append({i: (cue_id if i == pos else None) for i in range(4)})
-    # 6 position pairs × 12 cue assignments = 72 two-cue
-    for pos_a, pos_b in combinations(range(4), 2):
-        for cue_a, cue_b in permutations([1, 2, 3, 4], 2):
-            position_to_cueid = {0: None, 1: None, 2: None, 3: None}
-            position_to_cueid[pos_a] = cue_a
-            position_to_cueid[pos_b] = cue_b
-            conditions.append(position_to_cueid)
-    return conditions
-
-#build trial list for session 1 and session 3+
-def _build_trial_list_from_conditions(condition_set: list, n_blocks: int, n_per_block: int) -> list:
-    """Select conditions with reps, shuffle order. No random decisions within conditions."""
-    n_total = n_blocks * n_per_block
-    indices = [random.randint(0, len(condition_set) - 1) for _ in range(n_total)]
-    trials = [condition_set[i] for i in indices]
-    random.shuffle(trials)
-    return trials
-
-# build trial list for session 2
-def _build_trial_list_s2(condition_set: list, n_blocks: int, n_per_block: int) -> list:
-    """Session 2: 4 digit positions × 5 reps = 20 per block. Stratified sampling."""
-    # Group by digit_position (conditions 0–95: pos 0, 96–191: pos 1, etc.)
-    per_pos = len(condition_set) // 4
+def _build_trials(cfg: dict) -> list:
+    """Cue-balanced: each condition reps per block. Sample color/reward randomly."""
+    cue_set, n_blocks, n_per_block = cfg["cue_set"], cfg["n_blocks"], cfg["n_per_block"]
+    reps = n_per_block // len(cue_set)
+    pools = [_pool_for_cue(c, cfg) for c in cue_set]
     trials = []
     for _ in range(n_blocks):
-        block_trials = []
-        for digit_pos in range(4):
-            start, end = digit_pos * per_pos, (digit_pos + 1) * per_pos
-            pool = condition_set[start:end]
-            block_trials.extend(random.sample(pool, min(n_per_block // 4, len(pool))))
-        random.shuffle(block_trials)
-        trials.extend(block_trials)
+        block = [random.choice(p) for p in pools for _ in range(reps)]
+        random.shuffle(block)
+        trials.extend(block)
     return trials
 
 
-# Enumerate all conditions once, before experiment start
-if PRAC_SINGLE_DIGIT_ONLY[config_idx]:
-    all_conditions = _enumerate_conditions_s2()
-    trial_cue_positions = _build_trial_list_s2(all_conditions, n_blocks, n_trials_per_block)
-elif not PRAC_SHOW_ALL_TARGETS[config_idx]:
-    all_conditions = _enumerate_conditions_s1()
-    trial_cue_positions = _build_trial_list_from_conditions(
-        all_conditions, n_blocks, n_trials_per_block
-    )
-else:
-    all_conditions = _enumerate_conditions_s3plus()
-    trial_cue_positions = _build_trial_list_from_conditions(
-        all_conditions, n_blocks, n_trials_per_block
-    )
+trial_cue_positions = _build_trials(cfg)
 
 # Fixation point (match paradigm: visual.Circle, size=FixationSize, FixationPointColor)
 fixation = visual.Circle(
@@ -509,9 +479,9 @@ for trial_in_session in range(total_trials):
 
     clock.reset()
 
-    is_session1 = not PRAC_SHOW_ALL_TARGETS[config_idx]
-    is_session2 = PRAC_SINGLE_DIGIT_ONLY[config_idx]
-    show_color_map = PRAC_SHOW_COLOR_RESPONSE_MAP[config_idx]
+    is_session1 = SESSION == 1
+    is_session2 = SESSION == 2
+    show_color_map = SESSION in (1, 2, 3)
 
     # Set reward digit (1–4) in each circle's text stim.
     # Session 1: only the single cue gets text (set again below when drawing at center)
@@ -572,11 +542,22 @@ for trial_in_session in range(total_trials):
             for rect in color_response_squares:
                 rect.draw()
     else:
-        # Session 3+: 1–2 cues at positions, with color map if enabled
-        for outer, inner, text in cue_stimuli:
+        # Session 3+: draw by position_to_cueid (colors at specified positions)
+        for pos_idx in range(4):
+            cue_id = position_to_cueid.get(pos_idx)
+            if cue_id is None:
+                continue
+            outer, inner, text = cue_stimuli[cue_id - 1]
+            target_pos = positions[pos_idx]
+            text.setText(str(CUE_REWARD_VALUES[cue_id - 1]))
+            orig_positions = [outer.pos, inner.pos, text.pos]
+            for stim in (outer, inner, text):
+                stim.setPos(target_pos)
             outer.draw()
             inner.draw()
             text.draw()
+            for stim, orig in zip((outer, inner, text), orig_positions):
+                stim.setPos(orig)
         if show_color_map:
             for rect in color_response_squares:
                 rect.draw()
