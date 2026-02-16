@@ -25,14 +25,14 @@ EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
 MAX_SESSION = 6  # Session 6+ uses experimental config (4 blocks × 50 trials)
 # Per-session config (index = session - 1). Session 6+ uses config index 5.
-# S1: center only, color map. S2: 4 circles 1 digit, color map. S3: 1–2 cues, color map. S4–5: 1–2 cues, no map.
+# S1: center only, color map. S2–6: 4 circles, 1–2 rewards. reward_from_cue: True = reward = CUE_REWARD_VALUES[color]; False = reward random 1–4.
 SESSION_CONFIG = [
-    {"cue_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": True, "single_digit": False, "color_map": True},
-    {"cue_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": False, "single_digit": True, "color_map": True},
-    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "single_digit": False, "color_map": True},
-    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "single_digit": False, "color_map": False},
-    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 50, "center": False, "single_digit": False, "color_map": False},
-    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "single_digit": False, "color_map": False},
+    {"cue_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": True, "color_map": True, "reward_from_cue": True},
+    {"cue_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": False, "color_map": True, "reward_from_cue": False},
+    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "color_map": True, "reward_from_cue": True},
+    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "color_map": False, "reward_from_cue": True},
+    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 50, "center": False, "color_map": False, "reward_from_cue": True},
+    {"cue_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False, "reward_from_cue": True},
 ]
 MAX_WAIT_TIME = 2.0
 FIXATION_WAIT_TIME = 1.0
@@ -342,32 +342,10 @@ def _pool_for_cue(cue, cfg: dict) -> list:
 
     - position_to_cueid: which color at each screen position
     - position_to_reward: reward displayed at each position (None = no reward shown)
-      Single-digit trials: one position has reward, others None.
-      Multi-digit trials: each cued position has its reward.
+    - reward_from_cue: True = reward = CUE_REWARD_VALUES[color]; False = reward random 1–4
     """
     def make_trial(cueid: dict, reward: dict) -> dict:
         return {"position_to_cueid": cueid, "position_to_reward": reward}
-
-    # -------------------------------------------------------------------------
-    # SESSION 2: 4 circles, one has a digit. cue[0] = color that has the digit.
-    # position_to_reward: only digit_pos has digit_val, others None.
-    # -------------------------------------------------------------------------
-    if cfg["single_digit"]:
-        color_with_digit = cue[0]
-        other_colors = [c for c in [1, 2, 3, 4] if c != color_with_digit]
-        out = []
-        for digit_pos in range(4):
-            for digit_val in range(1, 5):
-                for perm in permutations(other_colors):
-                    position_to_cueid = {0: None, 1: None, 2: None, 3: None}
-                    position_to_cueid[digit_pos] = color_with_digit
-                    other_positions = [p for p in range(4) if p != digit_pos]
-                    for i, pos in enumerate(other_positions):
-                        position_to_cueid[pos] = perm[i]
-                    position_to_reward = {0: None, 1: None, 2: None, 3: None}
-                    position_to_reward[digit_pos] = digit_val
-                    out.append(make_trial(position_to_cueid, position_to_reward))
-        return out
 
     # -------------------------------------------------------------------------
     # SESSION 1: one cue at center. position 0 = center; others unused.
@@ -379,25 +357,28 @@ def _pool_for_cue(cue, cfg: dict) -> list:
         return [make_trial(cueid, reward)]
 
     # -------------------------------------------------------------------------
-    # SESSIONS 3+: 4 color circles at 4 positions (shuffled). Only 1 or 2 show reward.
+    # SESSIONS 2–6: 4 color circles at 4 positions (shuffled). 1 or 2 show reward.
     # Single cue: color cue[0] at one pos gets reward; other 3 colors, no reward.
     # Two cues: colors cue[0], cue[1] at two pos get rewards; other 2 colors, no reward.
+    # reward_from_cue: True = reward = CUE_REWARD_VALUES[color]; False = reward random 1–4.
     # -------------------------------------------------------------------------
+    reward_from_cue = cfg.get("reward_from_cue", True)
     if len(cue) == 1:
         cid = cue[0]
-        r = CUE_REWARD_VALUES[cid - 1]
+        reward_values = [CUE_REWARD_VALUES[cid - 1]] if reward_from_cue else list(range(1, 5))
         other_colors = [c for c in [1, 2, 3, 4] if c != cid]
         out = []
         for reward_pos in range(4):
             for perm in permutations(other_colors):
-                position_to_cueid = {0: None, 1: None, 2: None, 3: None}
-                position_to_cueid[reward_pos] = cid
-                other_positions = [p for p in range(4) if p != reward_pos]
-                for i, pos in enumerate(other_positions):
-                    position_to_cueid[pos] = perm[i]
-                position_to_reward = {0: None, 1: None, 2: None, 3: None}
-                position_to_reward[reward_pos] = r
-                out.append(make_trial(position_to_cueid, position_to_reward))
+                for r in reward_values:
+                    position_to_cueid = {0: None, 1: None, 2: None, 3: None}
+                    position_to_cueid[reward_pos] = cid
+                    other_positions = [p for p in range(4) if p != reward_pos]
+                    for i, pos in enumerate(other_positions):
+                        position_to_cueid[pos] = perm[i]
+                    position_to_reward = {0: None, 1: None, 2: None, 3: None}
+                    position_to_reward[reward_pos] = r
+                    out.append(make_trial(position_to_cueid, position_to_reward))
         return out
     a, b = cue[0], cue[1]
     ra, rb = CUE_REWARD_VALUES[a - 1], CUE_REWARD_VALUES[b - 1]
