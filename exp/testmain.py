@@ -344,17 +344,17 @@ def _pool_for_cue(cue, cfg: dict) -> list:
     - position_to_reward: reward displayed at each position (None = no reward shown)
     - reward_from_cue: True = reward = CUE_REWARD_VALUES[color]; False = reward random 1–4
     """
-    def make_trial(cueid: dict, reward: dict) -> dict:
-        return {"position_to_cueid": cueid, "position_to_reward": reward}
+    def make_trial(position_to_cueid: dict, reward: dict) -> dict:
+        return {"position_to_cueid": position_to_cueid, "position_to_reward": reward}
 
     # -------------------------------------------------------------------------
     # SESSION 1: one cue at center. position 0 = center; others unused.
     # -------------------------------------------------------------------------
     if cfg["center"]:
-        cid = cue[0]
-        cueid = {0: cid, 1: None, 2: None, 3: None}
-        reward = {0: CUE_REWARD_VALUES[cid - 1], 1: None, 2: None, 3: None}
-        return [make_trial(cueid, reward)]
+        cue_id = cue[0] #only takes the first cue id
+        position_to_cueid = {0: cue_id, 1: None, 2: None, 3: None}
+        reward = {0: CUE_REWARD_VALUES[cue_id - 1], 1: None, 2: None, 3: None}
+        return [make_trial(position_to_cueid, reward)]
 
     # -------------------------------------------------------------------------
     # SESSIONS 2–6: 4 color circles at 4 positions (shuffled). 1 or 2 show reward.
@@ -364,35 +364,35 @@ def _pool_for_cue(cue, cfg: dict) -> list:
     # -------------------------------------------------------------------------
     reward_from_cue = cfg.get("reward_from_cue", True)
     if len(cue) == 1:
-        cid = cue[0]
-        reward_values = [CUE_REWARD_VALUES[cid - 1]] if reward_from_cue else list(range(1, 5))
-        other_colors = [c for c in [1, 2, 3, 4] if c != cid]
+        cue_id = cue[0]
+        reward_values = [CUE_REWARD_VALUES[cue_id - 1]] if reward_from_cue else list(range(1, 5))
+        other_color_ids = [color_id for color_id in [1, 2, 3, 4] if color_id != cue_id]
         out = []
         for reward_pos in range(4):
-            for perm in permutations(other_colors):
-                for r in reward_values:
+            for other_colors_order in permutations(other_color_ids):
+                for reward_value in reward_values:
                     position_to_cueid = {0: None, 1: None, 2: None, 3: None}
-                    position_to_cueid[reward_pos] = cid
-                    other_positions = [p for p in range(4) if p != reward_pos]
-                    for i, pos in enumerate(other_positions):
-                        position_to_cueid[pos] = perm[i]
+                    position_to_cueid[reward_pos] = cue_id
+                    non_reward_positions = [pos for pos in range(4) if pos != reward_pos]
+                    for idx, position in enumerate(non_reward_positions):
+                        position_to_cueid[position] = other_colors_order[idx]
                     position_to_reward = {0: None, 1: None, 2: None, 3: None}
-                    position_to_reward[reward_pos] = r
+                    position_to_reward[reward_pos] = reward_value
                     out.append(make_trial(position_to_cueid, position_to_reward))
         return out
-    a, b = cue[0], cue[1]
-    ra, rb = CUE_REWARD_VALUES[a - 1], CUE_REWARD_VALUES[b - 1]
-    other_colors = [c for c in [1, 2, 3, 4] if c not in (a, b)]
+    cue_id_a, cue_id_b = cue[0], cue[1]
+    reward_a, reward_b = CUE_REWARD_VALUES[cue_id_a - 1], CUE_REWARD_VALUES[cue_id_b - 1]
+    other_color_ids = [color_id for color_id in [1, 2, 3, 4] if color_id not in (cue_id_a, cue_id_b)]
     out = []
-    for pa, pb in permutations(range(4), 2):
-        for perm in permutations(other_colors):
+    for position_a, position_b in permutations(range(4), 2):
+        for other_colors_order in permutations(other_color_ids):
             position_to_cueid = {0: None, 1: None, 2: None, 3: None}
-            position_to_cueid[pa], position_to_cueid[pb] = a, b
-            other_positions = [p for p in range(4) if p not in (pa, pb)]
-            for i, pos in enumerate(other_positions):
-                position_to_cueid[pos] = perm[i]
+            position_to_cueid[position_a], position_to_cueid[position_b] = cue_id_a, cue_id_b
+            non_reward_positions = [pos for pos in range(4) if pos not in (position_a, position_b)]
+            for idx, position in enumerate(non_reward_positions):
+                position_to_cueid[position] = other_colors_order[idx]
             position_to_reward = {0: None, 1: None, 2: None, 3: None}
-            position_to_reward[pa], position_to_reward[pb] = ra, rb
+            position_to_reward[position_a], position_to_reward[position_b] = reward_a, reward_b
             out.append(make_trial(position_to_cueid, position_to_reward))
     return out
 
