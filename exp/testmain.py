@@ -401,7 +401,7 @@ def _build_trials(cfg: dict) -> list:
     """Cue-balanced: each condition reps per block. Sample color/reward randomly."""
     cue_set, n_blocks, n_per_block = cfg["cue_set"], cfg["n_blocks"], cfg["n_per_block"]
     reps_per_cue = n_per_block // len(cue_set)
-    trial_pools = [_pool_for_cue(cue_condition, cfg) for cue_condition in cue_set]
+    trial_pools = [_pool_for_cue(cue_set_i, cfg) for cue_set_i in cue_set]
     trials = []
     for _ in range(n_blocks):
         block = [random.choice(pool) for pool in trial_pools for _ in range(reps_per_cue)]
