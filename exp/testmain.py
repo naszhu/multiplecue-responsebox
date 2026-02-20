@@ -347,7 +347,8 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
     def make_trial(position_to_color_id: dict, position_to_reward: dict) -> dict:
         return {"position_to_color_id": position_to_color_id, "position_to_reward": position_to_reward}
 
-    all_color_ids = [1, 2, 3, 4]
+    n_positions = NUM_POSITIONS
+    all_color_ids = list(range(1, n_positions + 1))
 
     # -------------------------------------------------------------------------
     # SESSION 1: one stimulus at center. position 0 = center; others unused.
@@ -356,34 +357,35 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
         reward_value = reward_values[0]
         out = []
         for color_id in all_color_ids:
-            position_to_color_id = {0: color_id, 1: None, 2: None, 3: None}
-            position_to_reward = {0: reward_value, 1: None, 2: None, 3: None}
+            position_to_color_id = {i: color_id if i == 0 else None for i in range(n_positions)} #there is only one position so take i = 0
+            position_to_reward = {i: reward_value if i == 0 else None for i in range(n_positions)}
             out.append(make_trial(position_to_color_id, position_to_reward))
         return out
 
     # -------------------------------------------------------------------------
-    # SESSIONS 2–6: 4 color circles at 4 positions. 1 or 2 positions show reward.
-    # Single reward [r]: one pos has reward r; colors permuted across all 4 positions.
-    # Dual reward [r1,r2]: two pos have rewards r1,r2; colors permuted across all 4.
+    # SESSIONS 2–6: n_positions color circles at n_positions positions. 1 or 2 positions show reward.
+    # Single reward [r]: one pos has reward r; colors permuted across all positions.
+    # Dual reward [r1,r2]: two pos have rewards r1,r2; colors permuted across all positions.
+    # This code builds the full combinatorial set of trial variants for each reward condition.
     # -------------------------------------------------------------------------
     if len(reward_values) == 1:
         reward_value = reward_values[0]
         out = []
-        for reward_pos in range(4):
-            for color_order in permutations(all_color_ids):
-                position_to_color_id = {i: color_order[i] for i in range(4)}
-                position_to_reward = {0: None, 1: None, 2: None, 3: None}
+        for reward_pos in range(n_positions):
+            for color_id_i in permutations(all_color_ids):
+                position_to_color_id = {i: color_id_i[i] for i in range(n_positions)}
+                position_to_reward = {i: None for i in range(n_positions)}
                 position_to_reward[reward_pos] = reward_value
                 out.append(make_trial(position_to_color_id, position_to_reward))
         return out
 
     reward_a, reward_b = reward_values[0], reward_values[1]
     out = []
-    for position_a, position_b in permutations(range(4), 2):
+    for position_a, position_b in permutations(range(n_positions), 2):
         for reward_at_a, reward_at_b in [(reward_a, reward_b), (reward_b, reward_a)]:
-            for color_order in permutations(all_color_ids):
-                position_to_color_id = {i: color_order[i] for i in range(4)}
-                position_to_reward = {0: None, 1: None, 2: None, 3: None}
+            for color_id_i in permutations(all_color_ids):
+                position_to_color_id = {i: color_id_i[i] for i in range(n_positions)}
+                position_to_reward = {i: None for i in range(n_positions)}
                 position_to_reward[position_a], position_to_reward[position_b] = reward_at_a, reward_at_b
                 out.append(make_trial(position_to_color_id, position_to_reward))
     return out
