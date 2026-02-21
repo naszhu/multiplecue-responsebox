@@ -177,7 +177,7 @@ def _build_trial_row(
     acc = 1 if actual_reward == max_reward and max_reward > 0 else 0
     color_exp = sel_color if (has_response and sel_color) else 0
     color_rank_resp = color_ranks[sel] if (has_response and sel_color) else 0
-    pos_with_selected_color = next((p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == (sel + 1)), None)
+    pos_with_selected_color = next((p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == selected_color), None) if selected_color is not None else None
     exp_reward = (position_to_reward[pos_with_selected_color] or 0) if (has_response and pos_with_selected_color is not None) else 0
 
     cond = f"{len(colors_shown)}cue"
