@@ -36,7 +36,10 @@ SESSION_CONFIG = [
     {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
 ]
 MAX_WAIT_TIME = 2.0
-FIXATION_WAIT_TIME = 1.0
+# Trial start jitter (match paradigm: TrialStartJitterOffsetTime, MeanTime, MaxTime)
+TRIAL_START_JITTER_OFFSET = 1.0
+TRIAL_START_JITTER_MEAN = 0.5
+TRIAL_START_JITTER_MAX = 5.0
 # Warm-up trials per block (match paradigm: FirstWarmUpTrials, OtherWarmUpTrials)
 FIRST_WARMUP_TRIALS = 4
 OTHER_WARMUP_TRIALS = 2
@@ -159,6 +162,7 @@ def _build_trial_row(
     block,
     trial_index,
     warm_up=0,
+    trial_start_jitter_time_ms=0,
 ):
     """Build a trial data row """
     # Color layout: 4-digit strings (position 0..3). Rewards from position_to_reward.
@@ -197,7 +201,7 @@ def _build_trial_row(
         "WarmUpTrial": warm_up,
         "CueCondition": cond,
         "NumCues": len(colors_shown),
-        "TrialStartJitterTime": round(FIXATION_WAIT_TIME * 1000, 2),  # ms
+        "TrialStartJitterTime": round(trial_start_jitter_time_ms, 2),  # ms
         "CueSOA": 0,
         "Cues": "".join(str(c) for c in colors),
         "CueValues": "".join(str(v) for v in reward_vals),
@@ -516,10 +520,15 @@ for trial_in_session in range(total_trials):
     # FLIP A: FIXATION SCREEN
     # =========================================================================
     # Presented: Black fixation dot at center (nothing else)
-    # Duration: FIXATION_WAIT_TIME (1.0 s)
+    # Duration: jittered (offset + exponential(mean), capped at max) - match paradigm
+    trial_start_jitter_time = min(
+        TRIAL_START_JITTER_OFFSET + random.expovariate(1.0 / TRIAL_START_JITTER_MEAN),
+        TRIAL_START_JITTER_MAX,
+    )
+    trial_start_jitter_time_ms = trial_start_jitter_time * 1000
     fixation.draw()
     win.flip()
-    core.wait(FIXATION_WAIT_TIME)
+    core.wait(trial_start_jitter_time)
 
     clock.reset()
 
@@ -639,6 +648,7 @@ for trial_in_session in range(total_trials):
         block=trial_data["block"],
         trial_index=trial_index,
         warm_up=trial_data["warm_up"],
+        trial_start_jitter_time_ms=trial_start_jitter_time_ms,
     )
 
     df = pd.DataFrame([row])
