@@ -19,7 +19,8 @@ import pandas as pd
 from psychopy import gui, logging, visual, core, event, monitors
 
 logging.console.setLevel(logging.DEBUG)
-
+is_debug = True
+DEBUG_DURATION = 0.001  # 1ms when is_debug: short presentation + auto-response, stop at end screen
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
@@ -487,7 +488,10 @@ def _load_session_instruction(session: int) -> str:
 instructions.setText(_load_session_instruction(SESSION) + "\n\nPress SPACE to begin.")
 instructions.draw()
 win.flip()
-event.waitKeys(keyList=['space'])
+if is_debug:
+    core.wait(DEBUG_DURATION)
+else:
+    event.waitKeys(keyList=['space'])
 
 # Create clock for response time measurement
 clock = core.Clock()
@@ -521,10 +525,13 @@ for trial_in_session in range(total_trials):
     # =========================================================================
     # Presented: Black fixation dot at center (nothing else)
     # Duration: jittered (offset + exponential(mean), capped at max) - match paradigm
-    trial_start_jitter_time = min(
-        TRIAL_START_JITTER_OFFSET + random.expovariate(1.0 / TRIAL_START_JITTER_MEAN),
-        TRIAL_START_JITTER_MAX,
-    )
+    if is_debug:
+        trial_start_jitter_time = DEBUG_DURATION
+    else:
+        trial_start_jitter_time = min(
+            TRIAL_START_JITTER_OFFSET + random.expovariate(1.0 / TRIAL_START_JITTER_MEAN),
+            TRIAL_START_JITTER_MAX,
+        )
     trial_start_jitter_time_ms = trial_start_jitter_time * 1000
     fixation.draw()
     win.flip()
@@ -576,9 +583,6 @@ for trial_in_session in range(total_trials):
     # -------------------------------------------------------------------------
     # Wait for key response (D/C/K/M or escape). Screen stays at FLIP B until then.
     # -------------------------------------------------------------------------
-    event.clearEvents()
-    keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
-
     rewards_at_positions = [r for r in position_to_reward.values() if r is not None]
     max_reward = max(rewards_at_positions) if rewards_at_positions else 0
     actual_reward = 0
@@ -588,7 +592,22 @@ for trial_in_session in range(total_trials):
     selected_color = None
     response_time = cue_time
 
-    if keys:
+    if is_debug:
+        core.wait(DEBUG_DURATION)
+        best_pos = max(position_to_reward, key=lambda p: position_to_reward.get(p) or 0)
+        correct_color_id = position_to_color_id.get(best_pos) or 1
+        pressed_key = response_keys[correct_color_id - 1]
+        response_time = cue_time + DEBUG_DURATION
+        keys = [(pressed_key, response_time)]
+        rt = DEBUG_DURATION * 1000
+        selected_position = correct_color_id - 1
+        selected_color = correct_color_id
+        actual_reward = position_to_reward.get(best_pos) or 0
+    else:
+        event.clearEvents()
+        keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
+
+    if keys and not is_debug:
         pressed_key = keys[0][0]
         response_time = keys[0][1]
         if pressed_key == 'escape':
@@ -599,7 +618,7 @@ for trial_in_session in range(total_trials):
         # Find position with that color; reward = position_to_reward[that_pos] (0 if None)
         pos_with_color = next((p for p in range(4) if position_to_color_id.get(p) == selected_color), None)
         actual_reward = (position_to_reward.get(pos_with_color) or 0) if pos_with_color is not None else 0
-    else:
+    elif not is_debug:
         rt = MAX_WAIT_TIME * 1000
 
     cum_reward += actual_reward * REWARD_MONEY_FACTOR
@@ -626,7 +645,7 @@ for trial_in_session in range(total_trials):
     feedback4.draw()
     fixation.draw()
     win.flip()
-    core.wait(FEEDBACK_WAIT_TIME)
+    core.wait(DEBUG_DURATION if is_debug else FEEDBACK_WAIT_TIME)
     end_trial_time = clock.getTime()
 
     # Build paradigm-style trial row
