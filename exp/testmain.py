@@ -456,6 +456,9 @@ feedback3 = visual.TextStim(win, text="", pos=FEEDBACK3_POS_DEG, height=FEEDBACK
 # feedback4: block and trial number (e.g. "Block 1  Trial 3 / 20")
 feedback4 = visual.TextStim(win, text="", pos=FEEDBACK4_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.2, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
 
+end_text = visual.TextStim(win, text="End of session!\n\n\nContact the Experimenter", color="white", height=INSTRUCTION_LETTER_SIZE_DEG)
+esc_confirm_text = visual.TextStim(win, text="Press ESC again to exit\n\nPress SPACE to continue", color="white", height=INSTRUCTION_LETTER_SIZE_DEG)
+
 # Instructions (match paradigm: InstructionLetterSize=15*StimFactor, wrapWidth=800*StimFactor)
 INSTRUCTION_DIR = Path(__file__).resolve().parent / "Instructions"
 INSTRUCTION_WRAP_WIDTH_DEG = 800 * STIM_FACTOR  # 32 deg, match paradigm Instruction
@@ -505,6 +508,7 @@ out_dir = Path(__file__).resolve().parent / "data_written"
 out_dir.mkdir(parents=True, exist_ok=True)
 out_path = out_dir / "trial_data.csv"
 first_trial_save = True  # Write header on first trial
+completed_normally = True
 
 # =============================================================================
 # TRIAL LOOP
@@ -613,7 +617,14 @@ for trial_in_session in range(total_trials):
         pressed_key = keys[0][0]
         response_time = keys[0][1]
         if pressed_key == 'escape':
-            break
+            esc_confirm_text.draw()
+            win.flip()
+            k = event.waitKeys(keyList=['escape', 'space'])
+            if k[0] == 'escape':
+                completed_normally = False
+                break
+            trial_index += 1
+            continue
         rt = (response_time - cue_time) * 1000
         selected_position = response_keys.index(pressed_key)
         selected_color = selected_position + 1  # color pressed (1–4)
@@ -679,14 +690,12 @@ for trial_in_session in range(total_trials):
     trial_index += 1
 
 # =============================================================================
-# FLIP 4: END MESSAGE
+# FLIP 4: END MESSAGE (only when experiment completes normally)
 # =============================================================================
-# Presented: "End of session! Contact the Experimenter" (match paradigm)
-# Waits for: Any key before closing
-end_text = visual.TextStim(win, text="End of session!\n\n\nContact the Experimenter", color="white", height=INSTRUCTION_LETTER_SIZE_DEG)
-end_text.draw()
-win.flip()
-event.waitKeys()
+if completed_normally:
+    end_text.draw()
+    win.flip()
+    event.waitKeys()
 
 win.close()
 core.quit()
