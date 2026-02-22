@@ -193,7 +193,7 @@ def _build_trial_row(
         "WarmUpTrial": 0,
         "CueCondition": cond,
         "NumCues": len(colors_shown),
-        "TrialStartJitterTime": FIXATION_WAIT_TIME,
+        "TrialStartJitterTime": round(FIXATION_WAIT_TIME * 1000, 2),  # ms
         "CueSOA": 0,
         "Cues": "".join(str(c) for c in colors),
         "CueValues": "".join(str(v) for v in reward_vals),
@@ -205,7 +205,7 @@ def _build_trial_row(
         # PointTargetResponse: 1=Red, 2=Green, 3=Blue, 4=Yellow, 0=timeout
         "PointTargetResponse": point_target, 
         
-        "RT": round(rt_sec, 4),
+        "RT": round(rt_sec * 1000, 2),  # ms
         "LateResponse": late, # 1 - late response, 0 - on time response
         "ACC": acc, # 1 - correct response, 0 - incorrect response
         "INTR": intr, # 1 - intrusion error, 0 - no intrusion error, if respond to the non-cued position
@@ -216,10 +216,10 @@ def _build_trial_row(
         "Reward": actual_reward, # the actual reward for the trial
         "MaxReward": max_reward, # the maximum reward for the trial
         "CumReward": cum_reward, # the cumulative reward for the session
-        "CueTime": round(cue_time, 4),
-        "PointTargetTime": round(cue_time + rt_sec, 4) if rt_sec else round(cue_time, 4),
-        "ColorTargetTime": round(cue_time, 4),
-        "EndTrialTime": round(end_trial_time, 4),
+        "CueTime": round(cue_time * 1000, 2),  # ms
+        "PointTargetTime": round((cue_time + rt_sec) * 1000, 2) if rt_sec else round(cue_time * 1000, 2),  # ms
+        "ColorTargetTime": round(cue_time * 1000, 2),  # ms
+        "EndTrialTime": round(end_trial_time * 1000, 2),  # ms
         "Note": "",
     }
 
