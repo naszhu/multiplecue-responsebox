@@ -37,6 +37,9 @@ SESSION_CONFIG = [
 ]
 MAX_WAIT_TIME = 2.0
 FIXATION_WAIT_TIME = 1.0
+# Warm-up trials per block (match paradigm: FirstWarmUpTrials, OtherWarmUpTrials)
+FIRST_WARMUP_TRIALS = 4
+OTHER_WARMUP_TRIALS = 2
 FEEDBACK_WAIT_TIME = 1.5
 REWARD_MONEY_FACTOR = 0.1
 RESPONSE_DEADLINE = 2.0  # seconds, match paradigm ResponseDeadline
@@ -155,6 +158,7 @@ def _build_trial_row(
     session,
     block,
     trial_index,
+    warm_up=0,
 ):
     """Build a trial data row """
     # Color layout: 4-digit strings (position 0..3). Rewards from position_to_reward.
@@ -190,7 +194,7 @@ def _build_trial_row(
         "Session": session + 1,
         "Block": block,
         "Trial": trial_index + 1,
-        "WarmUpTrial": 0,
+        "WarmUpTrial": warm_up,
         "CueCondition": cond,
         "NumCues": len(colors_shown),
         "TrialStartJitterTime": round(FIXATION_WAIT_TIME * 1000, 2),  # ms
@@ -330,7 +334,11 @@ config_idx = _session_config_idx(SESSION)
 cfg = SESSION_CONFIG[config_idx]
 n_blocks = cfg["n_blocks"]
 n_trials_per_block = cfg["n_per_block"]
-total_trials = n_blocks * n_trials_per_block
+# Total trials = warm-up (4 + 2*(n_blocks-1)) + main (n_blocks * n_trials_per_block)
+n_warmup_first = FIRST_WARMUP_TRIALS
+n_warmup_other = OTHER_WARMUP_TRIALS
+total_warmup = n_warmup_first + (n_blocks - 1) * n_warmup_other
+total_trials = total_warmup + n_blocks * n_trials_per_block
 
 
 def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
@@ -392,17 +400,33 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
 
 
 def _build_trials(cfg: dict) -> list:
-    """Reward-value-balanced: each condition reps per block. Color is sampled randomly per trial."""
+    """Reward-value-balanced: each condition reps per block. Warm-up trials prepended per block (match paradigm)."""
     reward_value_set, n_blocks, n_per_block = cfg["reward_value_set"], cfg["n_blocks"], cfg["n_per_block"]
     reps_per_condition = n_per_block // len(reward_value_set)
     trial_pools = [_pool_for_reward_values(reward_values, cfg) for reward_values in reward_value_set]
-    trials = []
-    for _ in range(n_blocks):
+
+    def _make_block():
         block = [random.choice(pool) for pool in trial_pools for _ in range(reps_per_condition)]
         random.shuffle(block)
-        trials.extend(block)
-    return trials
+        return block
 
+    trials = []
+    for block_idx in range(n_blocks):
+        block_number = block_idx + 1
+        n_warmup = FIRST_WARMUP_TRIALS if block_idx == 0 else OTHER_WARMUP_TRIALS
+
+        # Warm-up: full block, take first N (match paradigm blockFunction + del WarmUpBlockData[N:])
+        warmup_block = _make_block()
+        warmup_trials = warmup_block[:n_warmup]
+
+        # Main block
+        main_block = _make_block()
+
+        for i, t in enumerate(warmup_trials):
+            trials.append({**t, "warm_up": 1, "block": block_number, "trial_in_block": i + 1})
+        for i, t in enumerate(main_block):
+            trials.append({**t, "warm_up": 0, "block": block_number, "trial_in_block": n_warmup + i + 1})
+    return trials
 
 trial_data_list = _build_trials(cfg)
 
@@ -582,9 +606,10 @@ for trial_in_session in range(total_trials):
     feedback1.setColor(FEEDBACK_ZERO_REWARD_COLOR if actual_reward == 0 else FEEDBACK_POS_REWARD_COLOR)
     feedback2.setText("%.2f" % cum_reward)  # cumulative reward
     feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
-    current_block = (trial_index // n_trials_per_block) + 1
-    trial_in_block = (trial_index % n_trials_per_block) + 1
-    feedback4.setText("Block  " + str(current_block) + " / " + str(n_blocks) + "     Trial  " + str(trial_in_block) + " / " + str(n_trials_per_block))  # block & trial info
+    current_block = trial_data["block"]
+    trial_in_block = trial_data["trial_in_block"]
+    n_in_block = (n_warmup_first + n_trials_per_block) if current_block == 1 else (n_warmup_other + n_trials_per_block)
+    feedback4.setText("Block  " + str(current_block) + " / " + str(n_blocks) + "     Trial  " + str(trial_in_block) + " / " + str(n_in_block))  # block & trial info
 
     feedback1.draw()
     feedback2.draw()
@@ -596,7 +621,6 @@ for trial_in_session in range(total_trials):
     end_trial_time = clock.getTime()
 
     # Build paradigm-style trial row
-    current_block = (trial_index // n_trials_per_block) + 1
     row = _build_trial_row(
         position_to_color_id=position_to_color_id,
         position_to_reward=position_to_reward,
@@ -612,8 +636,9 @@ for trial_in_session in range(total_trials):
         max_reward=max_reward,
         cum_reward=cum_reward,
         session=session_idx,
-        block=current_block,
+        block=trial_data["block"],
         trial_index=trial_index,
+        warm_up=trial_data["warm_up"],
     )
 
     df = pd.DataFrame([row])
