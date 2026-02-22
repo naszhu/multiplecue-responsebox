@@ -19,7 +19,8 @@ import pandas as pd
 from psychopy import gui, logging, visual, core, event, monitors
 
 logging.console.setLevel(logging.DEBUG)
-
+is_debug = False
+DEBUG_DURATION = 0.001  # 1ms when is_debug: short presentation + auto-response, stop at end screen
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
@@ -36,7 +37,13 @@ SESSION_CONFIG = [
     {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
 ]
 MAX_WAIT_TIME = 2.0
-FIXATION_WAIT_TIME = 1.0
+# Trial start jitter (match paradigm: TrialStartJitterOffsetTime, MeanTime, MaxTime)
+TRIAL_START_JITTER_OFFSET = 1.0
+TRIAL_START_JITTER_MEAN = 0.5
+TRIAL_START_JITTER_MAX = 5.0
+# Warm-up trials per block (match paradigm: FirstWarmUpTrials, OtherWarmUpTrials)
+FIRST_WARMUP_TRIALS = 4
+OTHER_WARMUP_TRIALS = 2
 FEEDBACK_WAIT_TIME = 1.5
 REWARD_MONEY_FACTOR = 0.1
 RESPONSE_DEADLINE = 2.0  # seconds, match paradigm ResponseDeadline
@@ -118,6 +125,7 @@ NUM_POSITIONS = 4
 
 # Session dialog: run one session per launch (6+ uses experimental config: 4 blocks × 50 trials)
 session_dlg = gui.Dlg(title="CCRP Session")
+session_dlg.addField("Participant", initial="1")
 session_dlg.addField("Session", initial=1, choices=[1, 2, 3, 4, 5, 6])
 session_dlg.addField(
     "Color map layout",
@@ -128,8 +136,14 @@ session_dlg.addField(
 session_dlg.show()
 if not session_dlg.OK:
     raise SystemExit("Session dialog cancelled")
-SESSION = int(session_dlg.data[0])  # 1-based session number
-COLOR_MAP_LAYOUT = session_dlg.data[1]  # "horizontal" or "keyboard"
+PARTICIPANT = str(session_dlg.data[0]).strip()
+SESSION = int(session_dlg.data[1])  # 1-based session number
+COLOR_MAP_LAYOUT = session_dlg.data[2]  # "horizontal" or "keyboard"
+
+_out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
+_out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.csv").resolve()
+if _out_path.exists():
+    raise SystemExit(f"Data file already exists for participant {PARTICIPANT} session {SESSION}. Exiting.")
 
 
 def _session_config_idx(session: int) -> int:
@@ -155,6 +169,8 @@ def _build_trial_row(
     session,
     block,
     trial_index,
+    warm_up=0,
+    trial_start_jitter_time_ms=0,
 ):
     """Build a trial data row """
     # Color layout: 4-digit strings (position 0..3). Rewards from position_to_reward.
@@ -186,14 +202,14 @@ def _build_trial_row(
         "ExperimentName": EXPERIMENT_NAME,
         "ExperimentNumber": EXPERIMENT_NUMBER,
         "ColorMapLayout": COLOR_MAP_LAYOUT,
-        "Subject": "",
+        "Subject": PARTICIPANT,
         "Session": session + 1,
         "Block": block,
         "Trial": trial_index + 1,
-        "WarmUpTrial": 0,
+        "WarmUpTrial": warm_up,
         "CueCondition": cond,
         "NumCues": len(colors_shown),
-        "TrialStartJitterTime": round(FIXATION_WAIT_TIME * 1000, 2),  # ms
+        "TrialStartJitterTime": round(trial_start_jitter_time_ms, 2),  # ms
         "CueSOA": 0,
         "Cues": "".join(str(c) for c in colors),
         "CueValues": "".join(str(v) for v in reward_vals),
@@ -330,7 +346,11 @@ config_idx = _session_config_idx(SESSION)
 cfg = SESSION_CONFIG[config_idx]
 n_blocks = cfg["n_blocks"]
 n_trials_per_block = cfg["n_per_block"]
-total_trials = n_blocks * n_trials_per_block
+# Total trials = warm-up (4 + 2*(n_blocks-1)) + main (n_blocks * n_trials_per_block)
+n_warmup_first = FIRST_WARMUP_TRIALS
+n_warmup_other = OTHER_WARMUP_TRIALS
+total_warmup = n_warmup_first + (n_blocks - 1) * n_warmup_other
+total_trials = total_warmup + n_blocks * n_trials_per_block
 
 
 def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
@@ -392,17 +412,33 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
 
 
 def _build_trials(cfg: dict) -> list:
-    """Reward-value-balanced: each condition reps per block. Color is sampled randomly per trial."""
+    """Reward-value-balanced: each condition reps per block. Warm-up trials prepended per block (match paradigm)."""
     reward_value_set, n_blocks, n_per_block = cfg["reward_value_set"], cfg["n_blocks"], cfg["n_per_block"]
-    reps_per_condition = n_per_block // len(reward_value_set)
+    reps_per_condition = n_per_block // len(reward_value_set) #how many trials each condition repeats
     trial_pools = [_pool_for_reward_values(reward_values, cfg) for reward_values in reward_value_set]
-    trials = []
-    for _ in range(n_blocks):
+
+    def _make_block():
         block = [random.choice(pool) for pool in trial_pools for _ in range(reps_per_condition)]
         random.shuffle(block)
-        trials.extend(block)
-    return trials
+        return block
 
+    trials = []
+    for block_idx in range(n_blocks):
+        block_number = block_idx + 1
+        n_warmup = FIRST_WARMUP_TRIALS if block_idx == 0 else OTHER_WARMUP_TRIALS
+
+        # Warm-up: full block, take first N (match paradigm blockFunction + del WarmUpBlockData[N:])
+        warmup_block = _make_block()
+        warmup_trials = warmup_block[:n_warmup]
+
+        # Main block
+        main_block = _make_block()
+
+        for i, t in enumerate(warmup_trials):
+            trials.append({**t, "warm_up": 1, "block": block_number, "trial_in_block": i + 1})
+        for i, t in enumerate(main_block):
+            trials.append({**t, "warm_up": 0, "block": block_number, "trial_in_block": n_warmup + i + 1})
+    return trials
 
 trial_data_list = _build_trials(cfg)
 
@@ -427,8 +463,12 @@ feedback3 = visual.TextStim(win, text="", pos=FEEDBACK3_POS_DEG, height=FEEDBACK
 # feedback4: block and trial number (e.g. "Block 1  Trial 3 / 20")
 feedback4 = visual.TextStim(win, text="", pos=FEEDBACK4_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.2, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
 
-# Instructions (InstructionLetterSize = 15*StimFactor)
-INSTRUCTION_DIR = Path(__file__).resolve().parent.parent / "others" / "To Lea 251127" / "Instructions"
+end_text = visual.TextStim(win, text="End of session!\n\n\nContact the Experimenter", color="white", height=INSTRUCTION_LETTER_SIZE_DEG)
+esc_confirm_text = visual.TextStim(win, text="Press ESC again to exit\n\nPress SPACE to continue", color="white", height=INSTRUCTION_LETTER_SIZE_DEG)
+
+# Instructions (match paradigm: InstructionLetterSize=15*StimFactor, wrapWidth=800*StimFactor)
+INSTRUCTION_DIR = Path(__file__).resolve().parent / "Instructions"
+INSTRUCTION_WRAP_WIDTH_DEG = 800 * STIM_FACTOR  # 32 deg, match paradigm Instruction
 instructions = visual.TextStim(
     win,
     text="Press the key for the COLOR of the circle with the highest reward:\n"
@@ -436,7 +476,8 @@ instructions = visual.TextStim(
          "Press SPACE to start",
     color="white",
     height=INSTRUCTION_LETTER_SIZE_DEG,
-    wrapWidth=20,
+    wrapWidth=INSTRUCTION_WRAP_WIDTH_DEG,
+    units=USE_UNITS,
 )
 
 def _load_session_instruction(session: int) -> str:
@@ -459,7 +500,10 @@ def _load_session_instruction(session: int) -> str:
 instructions.setText(_load_session_instruction(SESSION) + "\n\nPress SPACE to begin.")
 instructions.draw()
 win.flip()
-event.waitKeys(keyList=['space'])
+if is_debug:
+    core.wait(DEBUG_DURATION)
+else:
+    event.waitKeys(keyList=['space'])
 
 # Create clock for response time measurement
 clock = core.Clock()
@@ -467,10 +511,12 @@ clock = core.Clock()
 # Initialize cumulative reward and trial data log
 cum_reward = 0.0
 trial_index = 0
-out_dir = Path(__file__).resolve().parent / "data_written"
+out_dir = _out_dir
 out_dir.mkdir(parents=True, exist_ok=True)
-out_path = out_dir / "trial_data.csv"
+out_path = _out_path
+print(f"Data will be saved to: {out_path}")
 first_trial_save = True  # Write header on first trial
+completed_normally = True
 
 # =============================================================================
 # TRIAL LOOP
@@ -492,10 +538,18 @@ for trial_in_session in range(total_trials):
     # FLIP A: FIXATION SCREEN
     # =========================================================================
     # Presented: Black fixation dot at center (nothing else)
-    # Duration: FIXATION_WAIT_TIME (1.0 s)
+    # Duration: jittered (offset + exponential(mean), capped at max) - match paradigm
+    if is_debug:
+        trial_start_jitter_time = DEBUG_DURATION
+    else:
+        trial_start_jitter_time = min(
+            TRIAL_START_JITTER_OFFSET + random.expovariate(1.0 / TRIAL_START_JITTER_MEAN),
+            TRIAL_START_JITTER_MAX,
+        )
+    trial_start_jitter_time_ms = trial_start_jitter_time * 1000
     fixation.draw()
     win.flip()
-    core.wait(FIXATION_WAIT_TIME)
+    core.wait(trial_start_jitter_time)
 
     clock.reset()
 
@@ -543,9 +597,6 @@ for trial_in_session in range(total_trials):
     # -------------------------------------------------------------------------
     # Wait for key response (D/C/K/M or escape). Screen stays at FLIP B until then.
     # -------------------------------------------------------------------------
-    event.clearEvents()
-    keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
-
     rewards_at_positions = [r for r in position_to_reward.values() if r is not None]
     max_reward = max(rewards_at_positions) if rewards_at_positions else 0
     actual_reward = 0
@@ -555,18 +606,40 @@ for trial_in_session in range(total_trials):
     selected_color = None
     response_time = cue_time
 
-    if keys:
+    if is_debug:
+        core.wait(DEBUG_DURATION)
+        best_pos = max(position_to_reward, key=lambda p: position_to_reward.get(p) or 0)
+        correct_color_id = position_to_color_id.get(best_pos) or 1
+        pressed_key = response_keys[correct_color_id - 1]
+        response_time = cue_time + DEBUG_DURATION
+        keys = [(pressed_key, response_time)]
+        rt = DEBUG_DURATION * 1000
+        selected_position = correct_color_id - 1
+        selected_color = correct_color_id
+        actual_reward = position_to_reward.get(best_pos) or 0
+    else:
+        event.clearEvents()
+        keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
+
+    if keys and not is_debug:
         pressed_key = keys[0][0]
         response_time = keys[0][1]
         if pressed_key == 'escape':
-            break
+            esc_confirm_text.draw()
+            win.flip()
+            k = event.waitKeys(keyList=['escape', 'space'])
+            if k[0] == 'escape':
+                completed_normally = False
+                break
+            trial_index += 1
+            continue
         rt = (response_time - cue_time) * 1000
         selected_position = response_keys.index(pressed_key)
         selected_color = selected_position + 1  # color pressed (1–4)
         # Find position with that color; reward = position_to_reward[that_pos] (0 if None)
         pos_with_color = next((p for p in range(4) if position_to_color_id.get(p) == selected_color), None)
         actual_reward = (position_to_reward.get(pos_with_color) or 0) if pos_with_color is not None else 0
-    else:
+    elif not is_debug:
         rt = MAX_WAIT_TIME * 1000
 
     cum_reward += actual_reward * REWARD_MONEY_FACTOR
@@ -582,9 +655,10 @@ for trial_in_session in range(total_trials):
     feedback1.setColor(FEEDBACK_ZERO_REWARD_COLOR if actual_reward == 0 else FEEDBACK_POS_REWARD_COLOR)
     feedback2.setText("%.2f" % cum_reward)  # cumulative reward
     feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
-    current_block = (trial_index // n_trials_per_block) + 1
-    trial_in_block = (trial_index % n_trials_per_block) + 1
-    feedback4.setText("Block  " + str(current_block) + " / " + str(n_blocks) + "     Trial  " + str(trial_in_block) + " / " + str(n_trials_per_block))  # block & trial info
+    current_block = trial_data["block"]
+    trial_in_block = trial_data["trial_in_block"]
+    n_in_block = (n_warmup_first + n_trials_per_block) if current_block == 1 else (n_warmup_other + n_trials_per_block)
+    feedback4.setText("Block  " + str(current_block) + " / " + str(n_blocks) + "     Trial  " + str(trial_in_block) + " / " + str(n_in_block))  # block & trial info
 
     feedback1.draw()
     feedback2.draw()
@@ -592,11 +666,10 @@ for trial_in_session in range(total_trials):
     feedback4.draw()
     fixation.draw()
     win.flip()
-    core.wait(FEEDBACK_WAIT_TIME)
+    core.wait(DEBUG_DURATION if is_debug else FEEDBACK_WAIT_TIME)
     end_trial_time = clock.getTime()
 
     # Build paradigm-style trial row
-    current_block = (trial_index // n_trials_per_block) + 1
     row = _build_trial_row(
         position_to_color_id=position_to_color_id,
         position_to_reward=position_to_reward,
@@ -612,25 +685,25 @@ for trial_in_session in range(total_trials):
         max_reward=max_reward,
         cum_reward=cum_reward,
         session=session_idx,
-        block=current_block,
+        block=trial_data["block"],
         trial_index=trial_index,
+        warm_up=trial_data["warm_up"],
+        trial_start_jitter_time_ms=trial_start_jitter_time_ms,
     )
 
     df = pd.DataFrame([row])
-    df.to_csv(out_path, mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
+    df.to_csv(str(out_path), mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
     first_trial_save = False
 
     trial_index += 1
 
 # =============================================================================
-# FLIP 4: END MESSAGE
+# FLIP 4: END MESSAGE (only when experiment completes normally)
 # =============================================================================
-# Presented: "Demo complete! Press any key to exit"
-# Waits for: Any key before closing
-end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=FEEDBACK_LETTER_SIZE_DEG)
-end_text.draw()
-win.flip()
-event.waitKeys()
+if completed_normally:
+    end_text.draw()
+    win.flip()
+    event.waitKeys()
 
 win.close()
 core.quit()
