@@ -457,7 +457,7 @@ feedback3 = visual.TextStim(win, text="", pos=FEEDBACK3_POS_DEG, height=FEEDBACK
 feedback4 = visual.TextStim(win, text="", pos=FEEDBACK4_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.2, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
 
 # Instructions (match paradigm: InstructionLetterSize=15*StimFactor, wrapWidth=800*StimFactor)
-INSTRUCTION_DIR = Path(__file__).resolve().parent.parent / "others" / "To Lea 251127" / "Instructions"
+INSTRUCTION_DIR = Path(__file__).resolve().parent / "Instructions"
 INSTRUCTION_WRAP_WIDTH_DEG = 800 * STIM_FACTOR  # 32 deg, match paradigm Instruction
 instructions = visual.TextStim(
     win,
