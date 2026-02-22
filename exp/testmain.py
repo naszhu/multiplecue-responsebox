@@ -1,23 +1,41 @@
 """
-Simple Multiple Cue Paradigm Demo with Reward System
-Multiple colored circles (cues) appear on screen at different locations.
-Press corresponding key to respond.
+CCRP (Cued Color Response Paradigm): Color-to-key response mapping.
+Each color (Red, Green, Blue, Yellow) is associated with a key (D, C, K, M).
+Participant's task: press the key for the color of the circle with the highest reward.
+
+Display flow (win.flip locations):
+  FLIP 1: Instructions → wait for Space
+  FLIP A: Fixation only (per trial)
+  FLIP B: Cues/stimuli → wait for key response
+  FLIP C: Feedback (per trial)
+  FLIP 4: End message → wait for any key
 """
 import math
 import random
+from itertools import combinations, permutations
 from pathlib import Path
 
 import pandas as pd
-from psychopy import logging, visual, core, event, monitors
+from psychopy import gui, logging, visual, core, event, monitors
 
 logging.console.setLevel(logging.DEBUG)
 
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
-NUM_SESSIONS = 1
-NUM_TRIALS_PER_SESSION = 5
-MAX_WAIT_TIME = 5.0
+MAX_SESSION = 6  # Session 6+ uses experimental config (4 blocks × 50 trials)
+# Per-session config (index = session - 1). Session 6+ uses config index 5.
+# reward_value_set: which reward values (1–4) appear in trials. [1]=one pos has reward 1; [1,2]=two pos have rewards 1,2.
+# Color is always independent from reward value (each position gets a random color assignment).
+SESSION_CONFIG = [
+    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": True, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": False, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "color_map": False},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 50, "center": False, "color_map": False},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
+]
+MAX_WAIT_TIME = 2.0
 FIXATION_WAIT_TIME = 1.0
 FEEDBACK_WAIT_TIME = 1.5
 REWARD_MONEY_FACTOR = 0.1
@@ -70,6 +88,13 @@ FEEDBACK_POS_REWARD_COLOR = (-1, 0.7, -1)    # Green when reward>0
 
 INSTRUCTION_LETTER_SIZE_DEG = 0.6  # InstructionLetterSize = 15*StimFactor
 
+# Color-response instruction (paradigm: ResponseColorSize, ResponseColorDistance, -150*StimFactor)
+# Paradigm: ResponseColorSize=30*StimFactor, ResponseColorDistance=50*StimFactor, y=-150*StimFactor
+# x = ResponseColorDistance * (-StimulusColorNoResponses/2 + 0.5 + i)
+RESPONSE_COLOR_SIZE_DEG = 30 * STIM_FACTOR      # 1.2 deg
+RESPONSE_COLOR_DISTANCE_DEG = 50 * STIM_FACTOR  # 2 deg
+COLOR_MAP_Y_DEG = -150 * STIM_FACTOR            # -6 deg
+
 # Display / monitor (match paradigm exactly)
 WIN_SIZE_PIX = (1920, 1080)
 MONITOR_NAME = "OF2A_03_5_513_lab5"
@@ -81,18 +106,44 @@ MULTI_SAMPLE = True   # same as defult value, Anti-aliasing for smooth edges (pa
 NUM_SAMPLES = 4      # Samples per pixel when multiSample enabled
 CIRCLE_EDGES = 200   # Paradigm uses edges=200 for smooth circles (default ~32 is jagged)
 
-# Cue values: Cue 1=1pt, Cue 2=2pt, Cue 3=3pt, Cue 4=4pt
-CUE_VALUE = [1, 2, 3, 4]
+# Possible reward values (points 1–4). 
+REWARD_VALUES = [1, 2, 3, 4]
+
+# Color-to-key mapping: Red→D, Green→C, Blue→K, Yellow→M
+# Position i has fixed color: 0=Red, 1=Green, 2=Blue, 3=Yellow (from STIMULUS_TARGET_COLORS_RGB)
+COLOR_KEYS = ['d', 'c', 'k', 'm']  # key for position/color 0,1,2,3
 
 NUM_POSITIONS = 4
 
 
+# Session dialog: run one session per launch (6+ uses experimental config: 4 blocks × 50 trials)
+session_dlg = gui.Dlg(title="CCRP Session")
+session_dlg.addField("Session", initial=1, choices=[1, 2, 3, 4, 5, 6])
+session_dlg.addField(
+    "Color map layout",
+    initial="horizontal",
+    choices=["horizontal", "keyboard"],
+    tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Sessions 1–3)",
+)
+session_dlg.show()
+if not session_dlg.OK:
+    raise SystemExit("Session dialog cancelled")
+SESSION = int(session_dlg.data[0])  # 1-based session number
+COLOR_MAP_LAYOUT = session_dlg.data[1]  # "horizontal" or "keyboard"
+
+
+def _session_config_idx(session: int) -> int:
+    """Return config index for session (1-based). Session 6+ uses same config as session 6."""
+    return min(session - 1, 5)
+
+
 def _build_trial_row(
     *,
-    position_to_cue,
-    cues_shown,
+    position_to_color_id,
+    position_to_reward,
+    colors_shown,
     selected_position,
-    selected_cue,
+    selected_color,
     pressed_key,
     keys,
     cue_time,
@@ -102,69 +153,73 @@ def _build_trial_row(
     max_reward,
     cum_reward,
     session,
+    block,
     trial_index,
 ):
     """Build a trial data row """
-    # Cue layout: 4-digit strings (position 0..3)
-    cues = [position_to_cue[i] or 0 for i in range(NUM_POSITIONS)]
-    cue_vals = [CUE_VALUE[c - 1] if c else 0 for c in cues]
-    sorted_cues = sorted(cues)
-    cue_ranks = [NUM_POSITIONS - sorted_cues.index(cues[i]) for i in range(NUM_POSITIONS)]
+    # Color layout: 4-digit strings (position 0..3). Rewards from position_to_reward.
+    colors = [position_to_color_id[i] or 0 for i in range(NUM_POSITIONS)]
+    reward_vals = [position_to_reward[i] or 0 for i in range(NUM_POSITIONS)]
+    sorted_colors = sorted(colors)
+    color_ranks = [NUM_POSITIONS - sorted_colors.index(colors[i]) for i in range(NUM_POSITIONS)]
 
     # Response
     sel = selected_position
     has_response = sel is not None
     resp_loc = "".join("1" if i == sel else "0" for i in range(NUM_POSITIONS)) if has_response else "0000"
     point_target = (sel + 1) if has_response else 0
-    sel_cue = position_to_cue[sel] if has_response else None
+    sel_color = position_to_color_id[sel] if has_response else None
 
     rt_sec = (response_time - cue_time) if (keys and pressed_key != "escape") else (MAX_WAIT_TIME if not keys else 0.0)
     late = rt_sec > RESPONSE_DEADLINE
-    intr = 1 if (has_response and sel_cue is None) else 0
-    acc = 1 if actual_reward > 0 else 0
-    cue_exp = sel_cue if (has_response and sel_cue) else 0
-    cue_rank_resp = cue_ranks[sel] if (has_response and sel_cue) else 0
-    exp_reward = CUE_VALUE[cue_exp - 1] if cue_exp > 0 else 0
+    intr = 1 if (has_response and sel_color is None) else 0
+    # ACC: correct = selected the circle with highest reward (color-to-key rule)
+    acc = 1 if actual_reward == max_reward and max_reward > 0 else 0
+    color_exp = sel_color if (has_response and sel_color) else 0
+    color_rank_resp = color_ranks[sel] if (has_response and sel_color) else 0
+    pos_with_selected_color = next((p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == selected_color), None) if selected_color is not None else None
+    exp_reward = (position_to_reward[pos_with_selected_color] or 0) if (has_response and pos_with_selected_color is not None) else 0
 
-    cond = f"{len(cues_shown)}cue"
+    cond = f"{len(colors_shown)}cue"
 
     return {
         "ExperimentName": EXPERIMENT_NAME,
         "ExperimentNumber": EXPERIMENT_NUMBER,
+        "ColorMapLayout": COLOR_MAP_LAYOUT,
         "Subject": "",
         "Session": session + 1,
-        "Block": session + 1,
+        "Block": block,
         "Trial": trial_index + 1,
         "WarmUpTrial": 0,
         "CueCondition": cond,
-        "NumCues": len(cues_shown),
-        "TrialStartJitterTime": FIXATION_WAIT_TIME,
+        "NumCues": len(colors_shown),
+        "TrialStartJitterTime": round(FIXATION_WAIT_TIME * 1000, 2),  # ms
         "CueSOA": 0,
-        "Cues": "".join(str(c) for c in cues),
-        "CueValues": "".join(str(v) for v in cue_vals),
-        "CueRanks": "".join(str(r) for r in cue_ranks),
+        "Cues": "".join(str(c) for c in colors),
+        "CueValues": "".join(str(v) for v in reward_vals),
+        "CueRanks": "".join(str(r) for r in color_ranks),
         "Response": pressed_key or "timeout",
 
-        # RespLoc: 4-digit one-hot of response position (pos0..pos3). E.g. "1000"=top-right, "0100"=top-left, "0010"=bottom-left, "0001"=bottom-right, "0000"=timeout
+        # RespLoc: 4-digit one-hot of selected color (CCRP: pos0=Red, pos1=Green, pos2=Blue, pos3=Yellow)
         "RespLoc": resp_loc,
-        # PointTargetResponse: 1=pos0 (top-right), 2=pos1 (top-left), 3=pos2 (bottom-left), 4=pos3 (bottom-right), 0=timeout
+        # PointTargetResponse: 1=Red, 2=Green, 3=Blue, 4=Yellow, 0=timeout
         "PointTargetResponse": point_target, 
         
-        "RT": round(rt_sec, 4),
+        "RT": round(rt_sec * 1000, 2),  # ms
         "LateResponse": late, # 1 - late response, 0 - on time response
         "ACC": acc, # 1 - correct response, 0 - incorrect response
         "INTR": intr, # 1 - intrusion error, 0 - no intrusion error, if respond to the non-cued position
         "CueResponseValue": actual_reward, # the value of the cue at the selected position
-        "CueResponseExpValue": cue_exp, # the expected value of the cue at the selected position
-        "CueRankResponse": cue_rank_resp, # the rank of the cue at the selected position
+        "CueResponseExpValue": color_exp, # the color at the selected position
+        "CueRankResponse": color_rank_resp, # the rank of the color at the selected position
         "ExpectedReward": exp_reward, # the expected reward for the trial
         "Reward": actual_reward, # the actual reward for the trial
         "MaxReward": max_reward, # the maximum reward for the trial
         "CumReward": cum_reward, # the cumulative reward for the session
-        "CueTime": round(cue_time, 4),
-        "PointTargetTime": round(cue_time + rt_sec, 4) if rt_sec else round(cue_time, 4),
-        "ColorTargetTime": round(cue_time, 4),
-        "EndTrialTime": round(end_trial_time, 4),
+        "CueTime": round(cue_time * 1000, 2),  # ms
+        "PointTargetTime": round((cue_time + rt_sec) * 1000, 2) if rt_sec else round(cue_time * 1000, 2),  # ms
+        "ColorTargetTime": round(cue_time * 1000, 2),  # ms
+        "EndTrialTime": round(end_trial_time * 1000, 2),  # ms
         "Note": "",
     }
 
@@ -190,17 +245,17 @@ win = visual.Window(
 # Define cue positions (4 locations, from POSITIONS_DEG)
 positions = POSITIONS_DEG
 
-# Response keys: key 1=top-left, 2=top-right, 3=bottom-left, 4=bottom-right
-# POSITIONS_DEG order: 0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right (45° rotation)
-# response_keys[i] = key for position i: 0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right
-# d=top-left, c=bottom-left, k=top-right, m=bottom-right
-response_keys = ['k', 'd', 'c', 'm']
+# Response keys: color-to-key mapping (Red=D, Green=C, Blue=K, Yellow=M)
+# Position 0=Red, 1=Green, 2=Blue, 3=Yellow
+response_keys = COLOR_KEYS
 
 # Colors for each cue (from paradigm StimulusTargetColorsRGB)
 cue_colors = STIMULUS_TARGET_COLORS_RGB
 
-# Create donut-shaped cues (colored outer circle with white inner circle)
-cue_stimuli = []  # list of tuples (outer, inner, text)
+# cue_stimuli: list of (outer, inner, text) per color
+#   Index 0=Red, 1=Green, 2=Blue, 3=Yellow
+#   outer = colored circle, inner = white circle, text = reward digit (1–4)
+cue_stimuli = []
 for i, pos in enumerate(positions):
     outer = visual.Circle(win, radius=CUE_OUTER_RADIUS_DEG, fillColor=cue_colors[i], lineColor=None, pos=pos, edges=CIRCLE_EDGES)
     inner = visual.Circle(win, radius=CUE_INNER_RADIUS_DEG, fillColor=CUE_BG_COLOR, lineColor=None, pos=pos, edges=CIRCLE_EDGES)
@@ -221,25 +276,135 @@ for i, pos in enumerate(positions):
     )
     cue_stimuli.append((outer, inner, text))  # Store as tuple
 
-# Pre-assign all reward values for all trials (all sessions)
-# For each trial, assign which cues appear at which positions
-total_trials = NUM_SESSIONS * NUM_TRIALS_PER_SESSION
-trial_cue_positions = []  # For each trial: dict mapping position_index -> cue_number (or None)
-for _ in range(total_trials):
-    # Randomly select 1-2 cues to show per trial
-    num_cues = random.randint(1, 2)
-    cues = random.sample([1, 2, 3, 4], num_cues)
-    # Randomly assign these cues to positions (0-3)
-    available_positions = random.sample([0, 1, 2, 3], num_cues)
-    # Create mapping: position -> cue_number
-    position_to_cue = {}
-    for pos_idx in range(4):
-        if pos_idx in available_positions:
-            cue_idx = available_positions.index(pos_idx)
-            position_to_cue[pos_idx] = cues[cue_idx]
-        else:
-            position_to_cue[pos_idx] = None  # No cue at this position
-    trial_cue_positions.append(position_to_cue)
+# Example cue_stimuli after loop:
+#   cue_stimuli[0] = (outer_red, inner_red, text_red)   # Red circle at pos 0
+#   cue_stimuli[1] = (outer_green, inner_green, text_green)  # Green at pos 1
+#   cue_stimuli[2] = (outer_blue, inner_blue, text_blue)     # Blue at pos 2
+#   cue_stimuli[3] = (outer_yellow, inner_yellow, text_yellow)  # Yellow at pos 3
+
+# color_response_squares: 4 colored Rects at bottom (Session 1 only)
+#   Index 0=Red, 1=Green, 2=Blue, 3=Yellow. Maps colors to key positions.
+#   Layout "horizontal": 4 boxes in a row (Red, Green, Blue, Yellow left→right).
+#   Layout "keyboard": relative positions like D/C/K/M - D above C (left), K above M (right), staggered.
+def _color_map_positions(layout: str):
+    """Return (x, y) for each color index 0..3 based on layout."""
+    d = RESPONSE_COLOR_DISTANCE_DEG
+    base_y = COLOR_MAP_Y_DEG
+    if layout == "horizontal":
+        return [
+            (d * (-NUM_POSITIONS / 2 + 0.5 + i), base_y)
+            for i in range(NUM_POSITIONS)
+        ]
+    # keyboard: D above-left of C, K above-right of M. Each position written explicitly, no overlap.
+    # col_w: horizontal gap between left pair (D,C) and right pair (K,M) - larger = more space in middle.
+    row_h = d * 0.6       # vertical spacing between top and bottom row
+    col_w = d * 1.4       # horizontal spacing: left pair | gap | right pair (wider = more middle gap)
+    stagger = d * 0.35    # bottom row indent (C right of D, M left of K)
+    return [
+        (-col_w, base_y + row_h),              # 0 Red   (D) top-left
+        (-col_w + stagger, base_y - row_h),    # 1 Green (C) bottom-left, below D, shifted right
+        (col_w, base_y + row_h),               # 2 Blue  (K) top-right
+        (col_w - stagger, base_y - row_h),     # 3 Yellow(M) bottom-right, below K, shifted left
+    ]
+
+color_map_positions = _color_map_positions(COLOR_MAP_LAYOUT)
+color_response_squares = []
+for i in range(NUM_POSITIONS):
+    rect = visual.Rect(
+        win,
+        width=RESPONSE_COLOR_SIZE_DEG,
+        height=RESPONSE_COLOR_SIZE_DEG,
+        fillColor=STIMULUS_TARGET_COLORS_RGB[i],
+        lineColor=None,
+        pos=color_map_positions[i],
+        units=USE_UNITS,
+    )
+    color_response_squares.append(rect)
+
+# -----------------------------------------------------------------------------
+# Trial generation: cue-balanced; color/reward sampled randomly. Same logic all sessions.
+# All conditions enumerated BEFORE experiment.
+# -----------------------------------------------------------------------------
+session_idx = SESSION - 1
+config_idx = _session_config_idx(SESSION)
+cfg = SESSION_CONFIG[config_idx]
+n_blocks = cfg["n_blocks"]
+n_trials_per_block = cfg["n_per_block"]
+total_trials = n_blocks * n_trials_per_block
+
+
+def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
+    """
+    Enumerate all trial variants for a reward-value condition.
+
+    Output format:
+      {"position_to_color_id": {0..3: color_id 1–4 or None},
+       "position_to_reward": {0..3: reward (1–4) or None}}
+
+    Color is always independent from reward value. Each position gets a color (1–4);
+    reward values are fixed by the condition.
+    """
+    def make_trial(position_to_color_id: dict, position_to_reward: dict) -> dict:
+        return {"position_to_color_id": position_to_color_id, "position_to_reward": position_to_reward}
+
+    n_positions = NUM_POSITIONS
+    all_color_ids = list(range(1, n_positions + 1))
+
+    # -------------------------------------------------------------------------
+    # SESSION 1: one stimulus at center. position 0 = center; others unused.
+    # -------------------------------------------------------------------------
+    if cfg["center"]:
+        reward_value = reward_values[0]
+        out = []
+        for color_id in all_color_ids:
+            position_to_color_id = {i: color_id if i == 0 else None for i in range(n_positions)} #there is only one position so take i = 0
+            position_to_reward = {i: reward_value if i == 0 else None for i in range(n_positions)}
+            out.append(make_trial(position_to_color_id, position_to_reward))
+        return out
+
+    # -------------------------------------------------------------------------
+    # SESSIONS 2–6: n_positions color circles at n_positions positions. 1 or 2 positions show reward.
+    # Single reward [r]: one pos has reward r; colors permuted across all positions.
+    # Dual reward [r1,r2]: two pos have rewards r1,r2; colors permuted across all positions.
+    # This code builds the full combinatorial set of trial variants for each reward condition.
+    # -------------------------------------------------------------------------
+    if len(reward_values) == 1:
+        reward_value = reward_values[0]
+        out = []
+        for reward_pos in range(n_positions):
+            for color_id_i in permutations(all_color_ids):
+                position_to_color_id = {i: color_id_i[i] for i in range(n_positions)}
+                position_to_reward = {i: None for i in range(n_positions)}
+                position_to_reward[reward_pos] = reward_value
+                out.append(make_trial(position_to_color_id, position_to_reward))
+        return out
+
+    reward_a, reward_b = reward_values[0], reward_values[1]
+    out = []
+    for position_a, position_b in permutations(range(n_positions), 2):
+        for reward_at_a, reward_at_b in [(reward_a, reward_b), (reward_b, reward_a)]:
+            for color_id_i in permutations(all_color_ids):
+                position_to_color_id = {i: color_id_i[i] for i in range(n_positions)}
+                position_to_reward = {i: None for i in range(n_positions)}
+                position_to_reward[position_a], position_to_reward[position_b] = reward_at_a, reward_at_b
+                out.append(make_trial(position_to_color_id, position_to_reward))
+    return out
+
+
+def _build_trials(cfg: dict) -> list:
+    """Reward-value-balanced: each condition reps per block. Color is sampled randomly per trial."""
+    reward_value_set, n_blocks, n_per_block = cfg["reward_value_set"], cfg["n_blocks"], cfg["n_per_block"]
+    reps_per_condition = n_per_block // len(reward_value_set)
+    trial_pools = [_pool_for_reward_values(reward_values, cfg) for reward_values in reward_value_set]
+    trials = []
+    for _ in range(n_blocks):
+        block = [random.choice(pool) for pool in trial_pools for _ in range(reps_per_condition)]
+        random.shuffle(block)
+        trials.extend(block)
+    return trials
+
+
+trial_data_list = _build_trials(cfg)
 
 # Fixation point (match paradigm: visual.Circle, size=FixationSize, FixationPointColor)
 fixation = visual.Circle(
@@ -253,20 +418,45 @@ fixation = visual.Circle(
 )
 
 # Feedback texts (match paradigm Feedback1-4: positions, sizes, ori, opacity)
+# feedback1: main trial outcome (actual/max reward), largest text, color-coded (red=0, green>0)
 feedback1 = visual.TextStim(win, text="", pos=FEEDBACK1_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
+# feedback2: cumulative reward so far
 feedback2 = visual.TextStim(win, text="", pos=FEEDBACK2_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.6, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
+# feedback3: response time in ms
 feedback3 = visual.TextStim(win, text="", pos=FEEDBACK3_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.6, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
+# feedback4: block and trial number (e.g. "Block 1  Trial 3 / 20")
 feedback4 = visual.TextStim(win, text="", pos=FEEDBACK4_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.2, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
 
 # Instructions (InstructionLetterSize = 15*StimFactor)
+INSTRUCTION_DIR = Path(__file__).resolve().parent.parent / "others" / "To Lea 251127" / "Instructions"
 instructions = visual.TextStim(
     win,
-    text="Press D (top-left), C (bottom-left), K (top-right), or M (bottom-right) to respond\n\nPress SPACE to start",
+    text="Press the key for the COLOR of the circle with the highest reward:\n"
+         "Red = D, Green = C, Blue = K, Yellow = M\n\n"
+         "Press SPACE to start",
     color="white",
     height=INSTRUCTION_LETTER_SIZE_DEG,
+    wrapWidth=20,
 )
 
-# Show instructions
+def _load_session_instruction(session: int) -> str:
+    """Load instruction text for session (1-based). Fallback to default if file missing."""
+    if session in (4, 5):
+        path = INSTRUCTION_DIR / "CCRP instruction ses 4-5.txt"
+    elif session >= 6:
+        path = INSTRUCTION_DIR / "CCRP instruction exp ses.txt"
+    else:
+        path = INSTRUCTION_DIR / f"CCRP instruction ses {session}.txt"
+    if path.exists():
+        return path.read_text(encoding="utf-8", errors="replace").strip()
+    return instructions.text  # fallback
+
+# =============================================================================
+# FLIP 1: INSTRUCTIONS SCREEN
+# =============================================================================
+# Presented: Session-specific instruction text + "Press SPACE to begin"
+# Waits for: Space key before continuing
+instructions.setText(_load_session_instruction(SESSION) + "\n\nPress SPACE to begin.")
 instructions.draw()
 win.flip()
 event.waitKeys(keyList=['space'])
@@ -282,123 +472,161 @@ out_dir.mkdir(parents=True, exist_ok=True)
 out_path = out_dir / "trial_data.csv"
 first_trial_save = True  # Write header on first trial
 
-# Run sessions
-for session in range(NUM_SESSIONS):
-    # Reset cumulative reward at start of new session
-    if session > 0:
-        cum_reward = 0.0
-    
-    # Run trials in this session
-    for trial_in_session in range(NUM_TRIALS_PER_SESSION):
-        # Get pre-assigned position-to-cue mapping for this trial
-        position_to_cue = trial_cue_positions[trial_index]
-        
-        # Get list of cues shown in this trial (for reward calculation)
-        cues_shown = [cue for cue in position_to_cue.values() if cue is not None]
-        
-        # Show fixation
-        fixation.draw()
-        win.flip()
-        core.wait(FIXATION_WAIT_TIME)
-        
-        # Reset clock before showing cues
-        clock.reset()
-        
-        # Set reward numbers in circles (only show numbers at positions where cues are assigned)
-        for pos_idx, (outer, inner, text) in enumerate(cue_stimuli):
-            cue_num = position_to_cue[pos_idx]  # Get cue number at this position (or None)
-            if cue_num is not None:
-                text.setText(str(CUE_VALUE[cue_num - 1]))  # Show reward value for this cue
-            else:
-                text.setText("")  # No cue at this position, no number
-        
-        # Show all cues and record presentation time
-        for outer, inner, text in cue_stimuli:
-            outer.draw()  # Draw colored outer circle
-            inner.draw()   # Draw white inner circle
-            text.draw()    # Draw reward number (only if cue is shown at this position)
-        win.flip()
-        cue_time = clock.getTime()  # CueTime / ColorTargetTime (cues = color targets)
-        
-        # Wait for response
-        event.clearEvents()
-        keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
-        
-        # Calculate max reward (highest cue value among cues shown in this trial)
-        max_reward = max(CUE_VALUE[c - 1] for c in cues_shown)
-        actual_reward = 0
-        
-        # below are defulat value for timeout
-        pressed_key = ""
-        rt = None
-        selected_position = None
-        selected_cue = None
-        response_time = cue_time  # default for timeout
+# =============================================================================
+# TRIAL LOOP
+# =============================================================================
+# Each trial has 3 display phases (3 win.flip() calls):
+#   FLIP A: Fixation only
+#   FLIP B: Cues (stimuli) + wait for key response
+#   FLIP C: Feedback (reward, RT, etc.)
 
-        if keys:
-            pressed_key = keys[0][0]  # Key name
-            response_time = keys[0][1]  # Response time timestamp
+for trial_in_session in range(total_trials):
+    trial_data = trial_data_list[trial_index]
+    position_to_color_id = trial_data["position_to_color_id"]
+    position_to_reward = trial_data["position_to_reward"]
 
-            # Check for escape key
-            if pressed_key == 'escape':
-                break
+    # colors_shown: list of color IDs displayed this trial
+    colors_shown = [c for c in position_to_color_id.values() if c is not None]
 
-            rt = (response_time - cue_time) * 1000  # RT in milliseconds
-            selected_position = response_keys.index(pressed_key)  # Position index (0-3)
-            selected_cue = position_to_cue[selected_position]  # Get cue number at selected position
+    # =========================================================================
+    # FLIP A: FIXATION SCREEN
+    # =========================================================================
+    # Presented: Black fixation dot at center (nothing else)
+    # Duration: FIXATION_WAIT_TIME (1.0 s)
+    fixation.draw()
+    win.flip()
+    core.wait(FIXATION_WAIT_TIME)
 
-            # Calculate actual reward: value of the cue at the selected position
-            # Only give reward if the selected position has a cue (was shown in this trial)
-            if selected_cue is not None and selected_cue in cues_shown:
-                actual_reward = CUE_VALUE[selected_cue - 1]
-        else:
-            rt = MAX_WAIT_TIME * 1000  # Timeout
-        
-        # Update cumulative reward
-        cum_reward += actual_reward * REWARD_MONEY_FACTOR
-        cum_reward = round(cum_reward, 2)
-        
-        # Show feedback (match paradigm: content, colors, format)
-        feedback1.setText(str(actual_reward) + " / " + str(max_reward))
-        feedback1.setColor(FEEDBACK_ZERO_REWARD_COLOR if actual_reward == 0 else FEEDBACK_POS_REWARD_COLOR)
-        feedback2.setText("%.2f" % cum_reward)
-        feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")
-        feedback4.setText("Block  " + str(session + 1) + " / " + str(NUM_SESSIONS) + "               Trial  " + str(trial_index + 1) + " / " + str(NUM_SESSIONS * NUM_TRIALS_PER_SESSION))
+    clock.reset()
 
-        feedback1.draw()
-        feedback2.draw()
-        feedback3.draw()
-        feedback4.draw()
-        fixation.draw()
-        win.flip()
-        core.wait(FEEDBACK_WAIT_TIME)
-        end_trial_time = clock.getTime()
+    show_color_map = SESSION in (1, 2, 3)
 
-        # Build paradigm-style trial row 
-        row = _build_trial_row(
-            position_to_cue=position_to_cue,
-            cues_shown=cues_shown,
-            selected_position=selected_position,
-            selected_cue=selected_cue,
-            pressed_key=pressed_key,
-            keys=keys,
-            cue_time=cue_time,
-            response_time=response_time,
-            end_trial_time=end_trial_time,
-            actual_reward=actual_reward,
-            max_reward=max_reward,
-            cum_reward=cum_reward,
-            session=session,
-            trial_index=trial_index,
-        )
+    # =========================================================================
+    # FLIP B: CUE/STIMULUS SCREEN (stays until keypress or timeout)
+    # =========================================================================
+    fixation.draw()
+    if SESSION == 1:
+        # Session 1 only: draw single stimulus at center
+        color_id = position_to_color_id[0]
+        outer, inner, text = cue_stimuli[color_id - 1]
+        text.setText(str(position_to_reward[0]))
+        orig_pos = outer.pos
+        for stim in (outer, inner, text):
+            stim.setPos((0, 0))
+        outer.draw()
+        inner.draw()
+        text.draw()
+        for stim in (outer, inner, text):
+            stim.setPos(orig_pos)
+    else:
+        # Sessions 2+: 4 color circles at 4 positions. Reward from position_to_reward.
+        for pos_idx in range(4):
+            color_id = position_to_color_id[pos_idx]
+            outer, inner, text = cue_stimuli[color_id - 1]
+            target_pos = positions[pos_idx]
+            r = position_to_reward.get(pos_idx)
+            text.setText(str(r) if r is not None else "")
+            orig_positions = [outer.pos, inner.pos, text.pos]
+            for stim in (outer, inner, text):
+                stim.setPos(target_pos)
+            outer.draw()
+            inner.draw()
+            text.draw()
+            for stim, orig in zip((outer, inner, text), orig_positions):
+                stim.setPos(orig)
+    if show_color_map:
+        for rect in color_response_squares:
+            rect.draw()
+    win.flip()
+    cue_time = clock.getTime()
 
-        df = pd.DataFrame([row])
-        df.to_csv(out_path, mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
-        first_trial_save = False
+    # -------------------------------------------------------------------------
+    # Wait for key response (D/C/K/M or escape). Screen stays at FLIP B until then.
+    # -------------------------------------------------------------------------
+    event.clearEvents()
+    keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
 
-        trial_index += 1
+    rewards_at_positions = [r for r in position_to_reward.values() if r is not None]
+    max_reward = max(rewards_at_positions) if rewards_at_positions else 0
+    actual_reward = 0
+    pressed_key = ""
+    rt = None
+    selected_position = None
+    selected_color = None
+    response_time = cue_time
 
-# End message
+    if keys:
+        pressed_key = keys[0][0]
+        response_time = keys[0][1]
+        if pressed_key == 'escape':
+            break
+        rt = (response_time - cue_time) * 1000
+        selected_position = response_keys.index(pressed_key)
+        selected_color = selected_position + 1  # color pressed (1–4)
+        # Find position with that color; reward = position_to_reward[that_pos] (0 if None)
+        pos_with_color = next((p for p in range(4) if position_to_color_id.get(p) == selected_color), None)
+        actual_reward = (position_to_reward.get(pos_with_color) or 0) if pos_with_color is not None else 0
+    else:
+        rt = MAX_WAIT_TIME * 1000
+
+    cum_reward += actual_reward * REWARD_MONEY_FACTOR
+    cum_reward = round(cum_reward, 2)
+
+    # =========================================================================
+    # FLIP C: FEEDBACK SCREEN
+    # =========================================================================
+    # Presented: actual/max reward, cumulative reward, RT, block/trial info, fixation
+    # Duration: FEEDBACK_WAIT_TIME (1.5 s)
+    # -------------------------------------------------------------------------
+    feedback1.setText(str(actual_reward) + " / " + str(max_reward))  # e.g. "2 / 4"
+    feedback1.setColor(FEEDBACK_ZERO_REWARD_COLOR if actual_reward == 0 else FEEDBACK_POS_REWARD_COLOR)
+    feedback2.setText("%.2f" % cum_reward)  # cumulative reward
+    feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
+    current_block = (trial_index // n_trials_per_block) + 1
+    trial_in_block = (trial_index % n_trials_per_block) + 1
+    feedback4.setText("Block  " + str(current_block) + " / " + str(n_blocks) + "     Trial  " + str(trial_in_block) + " / " + str(n_trials_per_block))  # block & trial info
+
+    feedback1.draw()
+    feedback2.draw()
+    feedback3.draw()
+    feedback4.draw()
+    fixation.draw()
+    win.flip()
+    core.wait(FEEDBACK_WAIT_TIME)
+    end_trial_time = clock.getTime()
+
+    # Build paradigm-style trial row
+    current_block = (trial_index // n_trials_per_block) + 1
+    row = _build_trial_row(
+        position_to_color_id=position_to_color_id,
+        position_to_reward=position_to_reward,
+        colors_shown=colors_shown,
+        selected_position=selected_position,
+        selected_color=selected_color,
+        pressed_key=pressed_key,
+        keys=keys,
+        cue_time=cue_time,
+        response_time=response_time,
+        end_trial_time=end_trial_time,
+        actual_reward=actual_reward,
+        max_reward=max_reward,
+        cum_reward=cum_reward,
+        session=session_idx,
+        block=current_block,
+        trial_index=trial_index,
+    )
+
+    df = pd.DataFrame([row])
+    df.to_csv(out_path, mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
+    first_trial_save = False
+
+    trial_index += 1
+
+# =============================================================================
+# FLIP 4: END MESSAGE
+# =============================================================================
+# Presented: "Demo complete! Press any key to exit"
+# Waits for: Any key before closing
 end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=FEEDBACK_LETTER_SIZE_DEG)
 end_text.draw()
 win.flip()
