@@ -19,7 +19,7 @@ import pandas as pd
 from psychopy import gui, logging, visual, core, event, monitors
 
 logging.console.setLevel(logging.DEBUG)
-is_debug = True
+is_debug = False
 DEBUG_DURATION = 0.001  # 1ms when is_debug: short presentation + auto-response, stop at end screen
 # Constants 
 EXPERIMENT_NAME = "CCP"
@@ -125,6 +125,7 @@ NUM_POSITIONS = 4
 
 # Session dialog: run one session per launch (6+ uses experimental config: 4 blocks × 50 trials)
 session_dlg = gui.Dlg(title="CCRP Session")
+session_dlg.addField("Participant", initial="1")
 session_dlg.addField("Session", initial=1, choices=[1, 2, 3, 4, 5, 6])
 session_dlg.addField(
     "Color map layout",
@@ -135,8 +136,14 @@ session_dlg.addField(
 session_dlg.show()
 if not session_dlg.OK:
     raise SystemExit("Session dialog cancelled")
-SESSION = int(session_dlg.data[0])  # 1-based session number
-COLOR_MAP_LAYOUT = session_dlg.data[1]  # "horizontal" or "keyboard"
+PARTICIPANT = str(session_dlg.data[0]).strip()
+SESSION = int(session_dlg.data[1])  # 1-based session number
+COLOR_MAP_LAYOUT = session_dlg.data[2]  # "horizontal" or "keyboard"
+
+_out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
+_out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.csv").resolve()
+if _out_path.exists():
+    raise SystemExit(f"Data file already exists for participant {PARTICIPANT} session {SESSION}. Exiting.")
 
 
 def _session_config_idx(session: int) -> int:
@@ -195,7 +202,7 @@ def _build_trial_row(
         "ExperimentName": EXPERIMENT_NAME,
         "ExperimentNumber": EXPERIMENT_NUMBER,
         "ColorMapLayout": COLOR_MAP_LAYOUT,
-        "Subject": "",
+        "Subject": PARTICIPANT,
         "Session": session + 1,
         "Block": block,
         "Trial": trial_index + 1,
@@ -504,9 +511,10 @@ clock = core.Clock()
 # Initialize cumulative reward and trial data log
 cum_reward = 0.0
 trial_index = 0
-out_dir = Path(__file__).resolve().parent / "data_written"
+out_dir = _out_dir
 out_dir.mkdir(parents=True, exist_ok=True)
-out_path = out_dir / "trial_data.csv"
+out_path = _out_path
+print(f"Data will be saved to: {out_path}")
 first_trial_save = True  # Write header on first trial
 completed_normally = True
 
@@ -684,7 +692,7 @@ for trial_in_session in range(total_trials):
     )
 
     df = pd.DataFrame([row])
-    df.to_csv(out_path, mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
+    df.to_csv(str(out_path), mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
     first_trial_save = False
 
     trial_index += 1
