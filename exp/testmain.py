@@ -402,7 +402,7 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
 def _build_trials(cfg: dict) -> list:
     """Reward-value-balanced: each condition reps per block. Warm-up trials prepended per block (match paradigm)."""
     reward_value_set, n_blocks, n_per_block = cfg["reward_value_set"], cfg["n_blocks"], cfg["n_per_block"]
-    reps_per_condition = n_per_block // len(reward_value_set)
+    reps_per_condition = n_per_block // len(reward_value_set) #how many trials each condition repeats
     trial_pools = [_pool_for_reward_values(reward_values, cfg) for reward_values in reward_value_set]
 
     def _make_block():
