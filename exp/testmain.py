@@ -679,9 +679,9 @@ for trial_in_session in range(total_trials):
 # =============================================================================
 # FLIP 4: END MESSAGE
 # =============================================================================
-# Presented: "Demo complete! Press any key to exit"
+# Presented: "End of session! Contact the Experimenter" (match paradigm)
 # Waits for: Any key before closing
-end_text = visual.TextStim(win, text="Demo complete!\n\nPress any key to exit", color="white", height=FEEDBACK_LETTER_SIZE_DEG)
+end_text = visual.TextStim(win, text="End of session!\n\n\nContact the Experimenter", color="white", height=INSTRUCTION_LETTER_SIZE_DEG)
 end_text.draw()
 win.flip()
 event.waitKeys()
