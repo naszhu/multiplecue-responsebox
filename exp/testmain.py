@@ -456,8 +456,9 @@ feedback3 = visual.TextStim(win, text="", pos=FEEDBACK3_POS_DEG, height=FEEDBACK
 # feedback4: block and trial number (e.g. "Block 1  Trial 3 / 20")
 feedback4 = visual.TextStim(win, text="", pos=FEEDBACK4_POS_DEG, height=FEEDBACK_LETTER_SIZE_DEG * 0.2, color=(1, 1, 1), units=USE_UNITS, opacity=STIMULUS_OPACITY)
 
-# Instructions (InstructionLetterSize = 15*StimFactor)
+# Instructions (match paradigm: InstructionLetterSize=15*StimFactor, wrapWidth=800*StimFactor)
 INSTRUCTION_DIR = Path(__file__).resolve().parent.parent / "others" / "To Lea 251127" / "Instructions"
+INSTRUCTION_WRAP_WIDTH_DEG = 800 * STIM_FACTOR  # 32 deg, match paradigm Instruction
 instructions = visual.TextStim(
     win,
     text="Press the key for the COLOR of the circle with the highest reward:\n"
@@ -465,7 +466,8 @@ instructions = visual.TextStim(
          "Press SPACE to start",
     color="white",
     height=INSTRUCTION_LETTER_SIZE_DEG,
-    wrapWidth=20,
+    wrapWidth=INSTRUCTION_WRAP_WIDTH_DEG,
+    units=USE_UNITS,
 )
 
 def _load_session_instruction(session: int) -> str:
