@@ -30,17 +30,17 @@ DEBUG_CONFIG = {
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
-MAX_SESSION = 6  # Session 6+ uses experimental config (4 blocks × 50 trials)
+MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experimental config.
 # Per-session config (index = session - 1). Session 6+ uses config index 5.
 # reward_value_set: which reward values (1–4) appear in trials. [1]=one pos has reward 1; [1,2]=two pos have rewards 1,2.
 # Color is always independent from reward value (each position gets a random color assignment).
 SESSION_CONFIG = [
-    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": True, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": False, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "color_map": False},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 50, "center": False, "color_map": False},
+    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": True, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": False, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": False},
     {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 8, "n_per_block": 50, "center": False, "color_map": False},
 ]
 MAX_WAIT_TIME = 2.0
 # Trial start jitter (match paradigm: TrialStartJitterOffsetTime, MeanTime, MaxTime)
@@ -129,10 +129,10 @@ COLOR_KEYS = ['d', 'c', 'k', 'm']  # key for position/color 0,1,2,3
 NUM_POSITIONS = 4
 
 
-# Session dialog: run one session per launch (6+ uses experimental config: 4 blocks × 50 trials)
+# Session dialog: run one session per launch (6+ uses experimental config: 8 blocks × 50 trials)
 session_dlg = gui.Dlg(title="CCRP Session")
 session_dlg.addField("Participant", initial="1")
-session_dlg.addField("Session", initial=1, choices=[1, 2, 3, 4, 5, 6])
+session_dlg.addField("Session", initial=1)
 session_dlg.addField(
     "Color map layout",
     initial="horizontal",
@@ -144,6 +144,8 @@ if not session_dlg.OK:
     raise SystemExit("Session dialog cancelled")
 PARTICIPANT = str(session_dlg.data[0]).strip()
 SESSION = int(session_dlg.data[1])  # 1-based session number
+if SESSION < 1 or SESSION > MAX_SESSION:
+    raise SystemExit(f"Session must be between 1 and {MAX_SESSION}.")
 COLOR_MAP_LAYOUT = session_dlg.data[2]  # "horizontal" or "keyboard"
 
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
