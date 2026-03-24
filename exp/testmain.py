@@ -143,7 +143,12 @@ COLOR_MAP_LAYOUT = session_dlg.data[2]  # "horizontal" or "keyboard"
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
 _out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.csv").resolve()
 if _out_path.exists():
-    raise SystemExit(f"Data file already exists for participant {PARTICIPANT} session {SESSION}. Exiting.")
+    gui.popupError(
+        f"Participant data already exists (participant {PARTICIPANT}, session {SESSION}).\n"
+        "Delete existing data or try another participant number.",
+        title="Participant data already exists",
+    )
+    raise SystemExit("Data file already exists. Exiting after showing popup message.")
 
 
 def _session_config_idx(session: int) -> int:
