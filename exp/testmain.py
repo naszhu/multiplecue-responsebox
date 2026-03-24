@@ -494,6 +494,14 @@ instructions = visual.TextStim(
     wrapWidth=INSTRUCTION_WRAP_WIDTH_DEG,
     units=USE_UNITS,
 )
+block_break_text = visual.TextStim(
+    win,
+    text="",
+    color="white",
+    height=INSTRUCTION_LETTER_SIZE_DEG,
+    wrapWidth=INSTRUCTION_WRAP_WIDTH_DEG,
+    units=USE_UNITS,
+)
 
 def _load_session_instruction(session: int) -> str:
     """Load instruction text for session (1-based)."""
@@ -540,9 +548,24 @@ completed_normally = True
 #   FLIP A: Fixation only
 #   FLIP B: Cues (stimuli) + wait for key response
 #   FLIP C: Feedback (reward, RT, etc.)
+prev_block = None
 
 for trial_in_session in range(total_trials):
     trial_data = trial_data_list[trial_index]
+    current_block = trial_data["block"]
+    if prev_block is not None and current_block != prev_block:
+        block_break_text.setText(
+            f"End of Block {prev_block}.\n\n"
+            f"Next: Block {current_block} of {n_blocks}.\n\n"
+            "Press SPACE to continue."
+        )
+        block_break_text.draw()
+        win.flip()
+        if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
+            core.wait(DEBUG_CONFIG["trial_duration"])
+        else:
+            event.waitKeys(keyList=['space'])
+
     position_to_color_id = trial_data["position_to_color_id"]
     position_to_reward = trial_data["position_to_reward"]
 
@@ -714,6 +737,7 @@ for trial_in_session in range(total_trials):
     df.to_csv(str(out_path), mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
     first_trial_save = False
 
+    prev_block = current_block
     trial_index += 1
 
 # =============================================================================
