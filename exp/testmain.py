@@ -143,11 +143,17 @@ COLOR_MAP_LAYOUT = session_dlg.data[2]  # "horizontal" or "keyboard"
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
 _out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.csv").resolve()
 if _out_path.exists():
-    gui.popupError(
+    _dup_msg = (
         f"Participant data already exists (participant {PARTICIPANT}, session {SESSION}).\n"
-        "Delete existing data or try another participant number.",
-        title="Participant data already exists",
+        "Delete existing data or try another participant number."
     )
+    if hasattr(gui, "popupError"):
+        gui.popupError(_dup_msg, title="Participant data already exists")
+    else:
+        # Compatibility fallback for older PsychoPy versions.
+        _error_dlg = gui.Dlg(title="Participant data already exists")
+        _error_dlg.addText(_dup_msg)
+        _error_dlg.show()
     raise SystemExit("Data file already exists. Exiting after showing popup message.")
 
 
