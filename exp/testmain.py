@@ -488,9 +488,7 @@ INSTRUCTION_DIR = Path(__file__).resolve().parent / "Instructions"
 INSTRUCTION_WRAP_WIDTH_DEG = 800 * STIM_FACTOR  # 32 deg, match paradigm Instruction
 instructions = visual.TextStim(
     win,
-    text="Press the key for the COLOR of the circle with the highest reward:\n"
-         "Red = D, Green = C, Blue = K, Yellow = M\n\n"
-         "Press SPACE to start",
+    text="",
     color="white",
     height=INSTRUCTION_LETTER_SIZE_DEG,
     wrapWidth=INSTRUCTION_WRAP_WIDTH_DEG,
@@ -498,7 +496,7 @@ instructions = visual.TextStim(
 )
 
 def _load_session_instruction(session: int) -> str:
-    """Load instruction text for session (1-based). Fallback to default if file missing."""
+    """Load instruction text for session (1-based)."""
     if session in (4, 5):
         path = INSTRUCTION_DIR / "CCRP instruction ses 4-5.txt"
     elif session >= 6:
@@ -507,7 +505,7 @@ def _load_session_instruction(session: int) -> str:
         path = INSTRUCTION_DIR / f"CCRP instruction ses {session}.txt"
     if path.exists():
         return path.read_text(encoding="utf-8", errors="replace").strip()
-    return instructions.text  # fallback
+    raise SystemExit(f"Instruction file not found: {path}")
 
 # =============================================================================
 # FLIP 1: INSTRUCTIONS SCREEN
