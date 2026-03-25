@@ -14,27 +14,33 @@ import math
 import random
 from itertools import combinations, permutations
 from pathlib import Path
+from datetime import datetime
 
-import pandas as pd
 from psychopy import gui, logging, visual, core, event, monitors
 
 logging.console.setLevel(logging.DEBUG)
-is_debug = False
-DEBUG_DURATION = 0.001  # 1ms when is_debug: short presentation + auto-response, stop at end screen
+# Centralized debug switches. Add new toggles here as needed.
+DEBUG_CONFIG = {
+    "enabled": True,
+    "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
+    "auto_advance_instructions": False,
+    "auto_respond": True,
+    "short_feedback": True,
+}
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
-MAX_SESSION = 6  # Session 6+ uses experimental config (4 blocks × 50 trials)
+MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experimental config.
 # Per-session config (index = session - 1). Session 6+ uses config index 5.
 # reward_value_set: which reward values (1–4) appear in trials. [1]=one pos has reward 1; [1,2]=two pos have rewards 1,2.
 # Color is always independent from reward value (each position gets a random color assignment).
 SESSION_CONFIG = [
-    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": True, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 5, "n_per_block": 20, "center": False, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 30, "center": False, "color_map": False},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 2, "n_per_block": 50, "center": False, "color_map": False},
+    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": True, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": False, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": False},
     {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 8, "n_per_block": 50, "center": False, "color_map": False},
 ]
 MAX_WAIT_TIME = 2.0
 # Trial start jitter (match paradigm: TrialStartJitterOffsetTime, MeanTime, MaxTime)
@@ -123,13 +129,15 @@ COLOR_KEYS = ['d', 'c', 'k', 'm']  # key for position/color 0,1,2,3
 NUM_POSITIONS = 4
 
 
-# Session dialog: run one session per launch (6+ uses experimental config: 4 blocks × 50 trials)
+# Session dialog: run one session per launch (6+ uses experimental config: 8 blocks × 50 trials)
 session_dlg = gui.Dlg(title="CCRP Session")
 session_dlg.addField("Participant", initial="1")
-session_dlg.addField("Session", initial=1, choices=[1, 2, 3, 4, 5, 6])
+session_dlg.addField("Session", initial=1)
+session_dlg.addField("Age", initial="")
+session_dlg.addField("Gender", initial="NA")
 session_dlg.addField(
     "Color map layout",
-    initial="horizontal",
+    initial="keyboard",
     choices=["horizontal", "keyboard"],
     tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Sessions 1–3)",
 )
@@ -138,12 +146,27 @@ if not session_dlg.OK:
     raise SystemExit("Session dialog cancelled")
 PARTICIPANT = str(session_dlg.data[0]).strip()
 SESSION = int(session_dlg.data[1])  # 1-based session number
-COLOR_MAP_LAYOUT = session_dlg.data[2]  # "horizontal" or "keyboard"
+if SESSION < 1 or SESSION > MAX_SESSION:
+    raise SystemExit(f"Session must be between 1 and {MAX_SESSION}.")
+AGE = str(session_dlg.data[2]).strip() or "NA"
+GENDER = str(session_dlg.data[3]).strip() or "NA"
+COLOR_MAP_LAYOUT = session_dlg.data[4]  # "horizontal" or "keyboard"
 
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
-_out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.csv").resolve()
+_out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.dat").resolve()
 if _out_path.exists():
-    raise SystemExit(f"Data file already exists for participant {PARTICIPANT} session {SESSION}. Exiting.")
+    _dup_msg = (
+        f"Participant data already exists (participant {PARTICIPANT}, session {SESSION}).\n"
+        "Delete existing data or try another participant number."
+    )
+    if hasattr(gui, "popupError"):
+        gui.popupError(_dup_msg, title="Participant data already exists")
+    else:
+        # Compatibility fallback for older PsychoPy versions.
+        _error_dlg = gui.Dlg(title="Participant data already exists")
+        _error_dlg.addText(_dup_msg)
+        _error_dlg.show()
+    raise SystemExit("Data file already exists. Exiting after showing popup message.")
 
 
 def _session_config_idx(session: int) -> int:
@@ -238,6 +261,69 @@ def _build_trial_row(
         "EndTrialTime": round(end_trial_time * 1000, 2),  # ms
         "Note": "",
     }
+
+
+def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: int, n_trials_total: int) -> None:
+    """Write a PsychoPy-style .dat header (human-readable metadata + column names)."""
+    try:
+        import psychopy  # local import keeps startup simple
+        psychopy_version = getattr(psychopy, "__version__", "unknown")
+    except Exception:
+        psychopy_version = "unknown"
+
+    program_name = Path(__file__).name
+
+    header_lines = [
+        f"PsychoPy version: {psychopy_version}",
+        f"Experimental Program: {program_name}",
+        f"Experiment Name: {EXPERIMENT_NAME}",
+        f"Experiment Number: {EXPERIMENT_NUMBER}",
+        f"Exp start time: {exp_start_time_str}",
+        "",
+        f"Subject: {PARTICIPANT}",
+        f"Age: {AGE}",
+        f"Gender: {GENDER}",
+        "",
+        f"Practice: {'Y' if SESSION <= 5 else 'N'}",
+        f"Session: {SESSION}",
+        f"Number of Blocks: {n_blocks}",
+        f"Total number of trials: {n_trials_total}",
+        f"Warmup trials 1st block: {FIRST_WARMUP_TRIALS}",
+        f"Warmup trials other blocks: {OTHER_WARMUP_TRIALS}",
+        "",
+        f"Reward Money Factor: {REWARD_MONEY_FACTOR}",
+        "",
+        "Full screen: Y",
+        f"Response keys: {[k.upper() for k in response_keys]}",
+        f"Response deadline: {RESPONSE_DEADLINE}",
+        "",
+        f"Monitor name: {MONITOR_NAME}",
+        f"Monitor set size: {list(WIN_SIZE_PIX)} pixels",
+        f"Monitor width: {MONITOR_WIDTH_CM} cm",
+        f"Monitor distance: {MONITOR_DISTANCE_CM} cm",
+        "",
+        f"Background color: {BG_COLOR}",
+        f"Cue background color: {CUE_BG_COLOR}",
+        f"Cue text color: {CUE_TEXT_COLOR}",
+        f"Stimulus opacity: {STIMULUS_OPACITY}",
+        f"Stimulus target RGB color values: {STIMULUS_TARGET_COLORS_RGB}",
+        "",
+        "",
+    ]
+    fp.write("\n".join(header_lines))
+
+
+def _sanitize_dat_value(v):
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "True" if v else "False"
+    s = str(v)
+    return s.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+
+
+def _append_dat_row(*, fp, columns: list[str], row: dict) -> None:
+    fp.write("\t".join(_sanitize_dat_value(row.get(c, "")) for c in columns) + "\n")
 
 
 # Create window matching paradigm display settings
@@ -471,9 +557,15 @@ INSTRUCTION_DIR = Path(__file__).resolve().parent / "Instructions"
 INSTRUCTION_WRAP_WIDTH_DEG = 800 * STIM_FACTOR  # 32 deg, match paradigm Instruction
 instructions = visual.TextStim(
     win,
-    text="Press the key for the COLOR of the circle with the highest reward:\n"
-         "Red = D, Green = C, Blue = K, Yellow = M\n\n"
-         "Press SPACE to start",
+    text="",
+    color="white",
+    height=INSTRUCTION_LETTER_SIZE_DEG,
+    wrapWidth=INSTRUCTION_WRAP_WIDTH_DEG,
+    units=USE_UNITS,
+)
+block_break_text = visual.TextStim(
+    win,
+    text="",
     color="white",
     height=INSTRUCTION_LETTER_SIZE_DEG,
     wrapWidth=INSTRUCTION_WRAP_WIDTH_DEG,
@@ -481,7 +573,7 @@ instructions = visual.TextStim(
 )
 
 def _load_session_instruction(session: int) -> str:
-    """Load instruction text for session (1-based). Fallback to default if file missing."""
+    """Load instruction text for session (1-based)."""
     if session in (4, 5):
         path = INSTRUCTION_DIR / "CCRP instruction ses 4-5.txt"
     elif session >= 6:
@@ -490,18 +582,18 @@ def _load_session_instruction(session: int) -> str:
         path = INSTRUCTION_DIR / f"CCRP instruction ses {session}.txt"
     if path.exists():
         return path.read_text(encoding="utf-8", errors="replace").strip()
-    return instructions.text  # fallback
+    raise SystemExit(f"Instruction file not found: {path}")
 
 # =============================================================================
 # FLIP 1: INSTRUCTIONS SCREEN
 # =============================================================================
-# Presented: Session-specific instruction text + "Press SPACE to begin"
+# Presented: Session-specific instruction text 
 # Waits for: Space key before continuing
-instructions.setText(_load_session_instruction(SESSION) + "\n\nPress SPACE to begin.")
+instructions.setText(_load_session_instruction(SESSION))
 instructions.draw()
 win.flip()
-if is_debug:
-    core.wait(DEBUG_DURATION)
+if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
+    core.wait(DEBUG_CONFIG["trial_duration"])
 else:
     event.waitKeys(keyList=['space'])
 
@@ -517,6 +609,8 @@ out_path = _out_path
 print(f"Data will be saved to: {out_path}")
 first_trial_save = True  # Write header on first trial
 completed_normally = True
+exp_start_time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+dat_columns = None
 
 # =============================================================================
 # TRIAL LOOP
@@ -525,9 +619,24 @@ completed_normally = True
 #   FLIP A: Fixation only
 #   FLIP B: Cues (stimuli) + wait for key response
 #   FLIP C: Feedback (reward, RT, etc.)
+prev_block = None
 
 for trial_in_session in range(total_trials):
     trial_data = trial_data_list[trial_index]
+    current_block = trial_data["block"]
+    if prev_block is not None and current_block != prev_block:
+        block_break_text.setText(
+            f"End of Block {prev_block}.\n\n"
+            f"Next: Block {current_block} of {n_blocks}.\n\n"
+            "Press SPACE to continue."
+        )
+        block_break_text.draw()
+        win.flip()
+        if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
+            core.wait(DEBUG_CONFIG["trial_duration"])
+        else:
+            event.waitKeys(keyList=['space'])
+
     position_to_color_id = trial_data["position_to_color_id"]
     position_to_reward = trial_data["position_to_reward"]
 
@@ -539,8 +648,8 @@ for trial_in_session in range(total_trials):
     # =========================================================================
     # Presented: Black fixation dot at center (nothing else)
     # Duration: jittered (offset + exponential(mean), capped at max) - match paradigm
-    if is_debug:
-        trial_start_jitter_time = DEBUG_DURATION
+    if DEBUG_CONFIG["enabled"]:
+        trial_start_jitter_time = DEBUG_CONFIG["trial_duration"]
     else:
         trial_start_jitter_time = min(
             TRIAL_START_JITTER_OFFSET + random.expovariate(1.0 / TRIAL_START_JITTER_MEAN),
@@ -606,14 +715,14 @@ for trial_in_session in range(total_trials):
     selected_color = None
     response_time = cue_time
 
-    if is_debug:
-        core.wait(DEBUG_DURATION)
+    if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_respond"]:
+        core.wait(DEBUG_CONFIG["trial_duration"])
         best_pos = max(position_to_reward, key=lambda p: position_to_reward.get(p) or 0)
         correct_color_id = position_to_color_id.get(best_pos) or 1
         pressed_key = response_keys[correct_color_id - 1]
-        response_time = cue_time + DEBUG_DURATION
+        response_time = cue_time + DEBUG_CONFIG["trial_duration"]
         keys = [(pressed_key, response_time)]
-        rt = DEBUG_DURATION * 1000
+        rt = DEBUG_CONFIG["trial_duration"] * 1000
         selected_position = correct_color_id - 1
         selected_color = correct_color_id
         actual_reward = position_to_reward.get(best_pos) or 0
@@ -621,7 +730,7 @@ for trial_in_session in range(total_trials):
         event.clearEvents()
         keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
 
-    if keys and not is_debug:
+    if keys and not DEBUG_CONFIG["enabled"]:
         pressed_key = keys[0][0]
         response_time = keys[0][1]
         if pressed_key == 'escape':
@@ -639,7 +748,7 @@ for trial_in_session in range(total_trials):
         # Find position with that color; reward = position_to_reward[that_pos] (0 if None)
         pos_with_color = next((p for p in range(4) if position_to_color_id.get(p) == selected_color), None)
         actual_reward = (position_to_reward.get(pos_with_color) or 0) if pos_with_color is not None else 0
-    elif not is_debug:
+    elif not DEBUG_CONFIG["enabled"]:
         rt = MAX_WAIT_TIME * 1000
 
     cum_reward += actual_reward * REWARD_MONEY_FACTOR
@@ -666,7 +775,11 @@ for trial_in_session in range(total_trials):
     feedback4.draw()
     fixation.draw()
     win.flip()
-    core.wait(DEBUG_DURATION if is_debug else FEEDBACK_WAIT_TIME)
+    core.wait(
+        DEBUG_CONFIG["trial_duration"]
+        if (DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["short_feedback"])
+        else FEEDBACK_WAIT_TIME
+    )
     end_trial_time = clock.getTime()
 
     # Build paradigm-style trial row
@@ -691,10 +804,21 @@ for trial_in_session in range(total_trials):
         trial_start_jitter_time_ms=trial_start_jitter_time_ms,
     )
 
-    df = pd.DataFrame([row])
-    df.to_csv(str(out_path), mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
+    if dat_columns is None:
+        dat_columns = list(row.keys())
+    with open(out_path, "w" if first_trial_save else "a", encoding="utf-8", newline="\n") as fp:
+        if first_trial_save:
+            _write_psychopy_style_dat_header(
+                fp=fp,
+                exp_start_time_str=exp_start_time_str,
+                n_blocks=n_blocks,
+                n_trials_total=total_trials,
+            )
+            fp.write("\t".join(dat_columns) + "\n")
+        _append_dat_row(fp=fp, columns=dat_columns, row=row)
     first_trial_save = False
 
+    prev_block = current_block
     trial_index += 1
 
 # =============================================================================
