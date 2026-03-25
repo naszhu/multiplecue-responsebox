@@ -14,8 +14,8 @@ import math
 import random
 from itertools import combinations, permutations
 from pathlib import Path
+from datetime import datetime
 
-import pandas as pd
 from psychopy import gui, logging, visual, core, event, monitors
 
 logging.console.setLevel(logging.DEBUG)
@@ -149,7 +149,7 @@ if SESSION < 1 or SESSION > MAX_SESSION:
 COLOR_MAP_LAYOUT = session_dlg.data[2]  # "horizontal" or "keyboard"
 
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
-_out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.csv").resolve()
+_out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.dat").resolve()
 if _out_path.exists():
     _dup_msg = (
         f"Participant data already exists (participant {PARTICIPANT}, session {SESSION}).\n"
@@ -257,6 +257,69 @@ def _build_trial_row(
         "EndTrialTime": round(end_trial_time * 1000, 2),  # ms
         "Note": "",
     }
+
+
+def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: int, n_trials_total: int) -> None:
+    """Write a PsychoPy-style .dat header (human-readable metadata + column names)."""
+    try:
+        import psychopy  # local import keeps startup simple
+        psychopy_version = getattr(psychopy, "__version__", "unknown")
+    except Exception:
+        psychopy_version = "unknown"
+
+    program_name = Path(__file__).name
+
+    header_lines = [
+        f"PsychoPy version: {psychopy_version}",
+        f"Experimental Program: {program_name}",
+        f"Experiment Name: {EXPERIMENT_NAME}",
+        f"Experiment Number: {EXPERIMENT_NUMBER}",
+        f"Exp start time: {exp_start_time_str}",
+        "",
+        f"Subject: {PARTICIPANT}",
+        "Age: NA",
+        "Gender: NA",
+        "",
+        f"Practice: {'Y' if SESSION <= 5 else 'N'}",
+        f"Session: {SESSION}",
+        f"Number of Blocks: {n_blocks}",
+        f"Total number of trials: {n_trials_total}",
+        f"Warmup trials 1st block: {FIRST_WARMUP_TRIALS}",
+        f"Warmup trials other blocks: {OTHER_WARMUP_TRIALS}",
+        "",
+        f"Reward Money Factor: {REWARD_MONEY_FACTOR}",
+        "",
+        "Full screen: Y",
+        f"Response keys: {[k.upper() for k in response_keys]}",
+        f"Response deadline: {RESPONSE_DEADLINE}",
+        "",
+        f"Monitor name: {MONITOR_NAME}",
+        f"Monitor set size: {list(WIN_SIZE_PIX)} pixels",
+        f"Monitor width: {MONITOR_WIDTH_CM} cm",
+        f"Monitor distance: {MONITOR_DISTANCE_CM} cm",
+        "",
+        f"Background color: {BG_COLOR}",
+        f"Cue background color: {CUE_BG_COLOR}",
+        f"Cue text color: {CUE_TEXT_COLOR}",
+        f"Stimulus opacity: {STIMULUS_OPACITY}",
+        f"Stimulus target RGB color values: {STIMULUS_TARGET_COLORS_RGB}",
+        "",
+        "",
+    ]
+    fp.write("\n".join(header_lines))
+
+
+def _sanitize_dat_value(v):
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "True" if v else "False"
+    s = str(v)
+    return s.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+
+
+def _append_dat_row(*, fp, columns: list[str], row: dict) -> None:
+    fp.write("\t".join(_sanitize_dat_value(row.get(c, "")) for c in columns) + "\n")
 
 
 # Create window matching paradigm display settings
@@ -542,6 +605,8 @@ out_path = _out_path
 print(f"Data will be saved to: {out_path}")
 first_trial_save = True  # Write header on first trial
 completed_normally = True
+exp_start_time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+dat_columns = None
 
 # =============================================================================
 # TRIAL LOOP
@@ -735,8 +800,18 @@ for trial_in_session in range(total_trials):
         trial_start_jitter_time_ms=trial_start_jitter_time_ms,
     )
 
-    df = pd.DataFrame([row])
-    df.to_csv(str(out_path), mode="w" if first_trial_save else "a", header=first_trial_save, index=False)
+    if dat_columns is None:
+        dat_columns = list(row.keys())
+    with open(out_path, "w" if first_trial_save else "a", encoding="utf-8", newline="\n") as fp:
+        if first_trial_save:
+            _write_psychopy_style_dat_header(
+                fp=fp,
+                exp_start_time_str=exp_start_time_str,
+                n_blocks=n_blocks,
+                n_trials_total=total_trials,
+            )
+            fp.write("\t".join(dat_columns) + "\n")
+        _append_dat_row(fp=fp, columns=dat_columns, row=row)
     first_trial_save = False
 
     prev_block = current_block
