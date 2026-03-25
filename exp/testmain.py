@@ -133,9 +133,11 @@ NUM_POSITIONS = 4
 session_dlg = gui.Dlg(title="CCRP Session")
 session_dlg.addField("Participant", initial="1")
 session_dlg.addField("Session", initial=1)
+session_dlg.addField("Age", initial="")
+session_dlg.addField("Gender", initial="NA")
 session_dlg.addField(
     "Color map layout",
-    initial="horizontal",
+    initial="keyboard",
     choices=["horizontal", "keyboard"],
     tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Sessions 1–3)",
 )
@@ -146,7 +148,9 @@ PARTICIPANT = str(session_dlg.data[0]).strip()
 SESSION = int(session_dlg.data[1])  # 1-based session number
 if SESSION < 1 or SESSION > MAX_SESSION:
     raise SystemExit(f"Session must be between 1 and {MAX_SESSION}.")
-COLOR_MAP_LAYOUT = session_dlg.data[2]  # "horizontal" or "keyboard"
+AGE = str(session_dlg.data[2]).strip() or "NA"
+GENDER = str(session_dlg.data[3]).strip() or "NA"
+COLOR_MAP_LAYOUT = session_dlg.data[4]  # "horizontal" or "keyboard"
 
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
 _out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.dat").resolve()
@@ -277,8 +281,8 @@ def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: i
         f"Exp start time: {exp_start_time_str}",
         "",
         f"Subject: {PARTICIPANT}",
-        "Age: NA",
-        "Gender: NA",
+        f"Age: {AGE}",
+        f"Gender: {GENDER}",
         "",
         f"Practice: {'Y' if SESSION <= 5 else 'N'}",
         f"Session: {SESSION}",
