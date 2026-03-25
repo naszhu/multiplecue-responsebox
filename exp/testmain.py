@@ -587,9 +587,9 @@ def _load_session_instruction(session: int) -> str:
 # =============================================================================
 # FLIP 1: INSTRUCTIONS SCREEN
 # =============================================================================
-# Presented: Session-specific instruction text + "Press SPACE to begin"
+# Presented: Session-specific instruction text 
 # Waits for: Space key before continuing
-instructions.setText(_load_session_instruction(SESSION) + "\n\nPress SPACE to begin.")
+instructions.setText(_load_session_instruction(SESSION))
 instructions.draw()
 win.flip()
 if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
