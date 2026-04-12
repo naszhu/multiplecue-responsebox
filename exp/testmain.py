@@ -21,11 +21,12 @@ from psychopy import gui, logging, visual, core, event, monitors
 logging.console.setLevel(logging.DEBUG)
 # Centralized debug switches. Add new toggles here as needed.
 DEBUG_CONFIG = {
-    "enabled": True,
+    "enabled": False,
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
     "auto_advance_instructions": False,
     "auto_respond": True,
     "short_feedback": True,
+    "full_screen": True,  # Toggle fullscreen quickly during testing
 }
 # Constants 
 EXPERIMENT_NAME = "CCP"
@@ -334,7 +335,7 @@ mon.setDistance(MONITOR_DISTANCE_CM)
 mon.saveMon()
 win = visual.Window(
     size=WIN_SIZE_PIX,
-    fullscr=True,
+    fullscr=DEBUG_CONFIG["full_screen"],
     allowGUI=True,
     units=USE_UNITS,
     colorSpace=USE_COLOR_SPACE,
