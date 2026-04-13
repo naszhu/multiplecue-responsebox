@@ -98,6 +98,7 @@ FEEDBACK2_POS_DEG = (0, -70 * STIM_FACTOR)
 FEEDBACK3_POS_DEG = (0, -140 * STIM_FACTOR)
 FEEDBACK4_POS_DEG = (0, -200 * STIM_FACTOR)
 FEEDBACK_TEXT_COLOR = (1, 1, 1)              # Uniform feedback color (no reward-dependent color)
+TOO_SLOW_TEXT = "TOO SLOW!"
 
 INSTRUCTION_LETTER_SIZE_DEG = 0.6  # InstructionLetterSize = 15*StimFactor
 
@@ -767,7 +768,13 @@ for trial_in_session in range(total_trials):
     # Presented: actual/max reward, cumulative reward, RT, block/trial info, fixation
     # Duration: FEEDBACK_WAIT_TIME (1.5 s)
     # -------------------------------------------------------------------------
-    feedback1.setText(str(actual_reward) + " / " + str(max_reward))  # e.g. "2 / 4"
+    timed_out = (not keys)
+    if timed_out:
+        feedback1.setText(TOO_SLOW_TEXT)
+        feedback1.bold = True
+    else:
+        feedback1.setText(str(actual_reward) + " / " + str(max_reward))  # e.g. "2 / 4"
+        feedback1.bold = False
     feedback1.setColor(FEEDBACK_TEXT_COLOR)
     feedback2.setText("%.2f" % cum_reward)  # cumulative reward
     feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
