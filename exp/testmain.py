@@ -111,7 +111,8 @@ COLOR_MAP_Y_DEG = -150 * STIM_FACTOR            # -6 deg
 
 # Display / monitor (match paradigm exactly)
 WIN_SIZE_PIX = (1920, 1080)
-MONITOR_NAME = "OF2A_03_5_513_lab5"
+MONITOR_NAME = "room1_a1"
+MONITOR_CHOICES = [f"room1_a{i}" for i in range(1, 11)]
 MONITOR_WIDTH_CM = 52
 MONITOR_DISTANCE_CM = 60
 USE_UNITS = "deg"
@@ -142,6 +143,11 @@ session_dlg.addField(
     choices=["horizontal", "keyboard"],
     tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Sessions 1–3)",
 )
+session_dlg.addField(
+    "Monitor name",
+    initial=MONITOR_NAME,
+    choices=MONITOR_CHOICES,
+)
 session_dlg.show()
 if not session_dlg.OK:
     raise SystemExit("Session dialog cancelled")
@@ -152,6 +158,7 @@ if SESSION < 1 or SESSION > MAX_SESSION:
 AGE = str(session_dlg.data[2]).strip() or "NA"
 GENDER = str(session_dlg.data[3]).strip() or "NA"
 COLOR_MAP_LAYOUT = session_dlg.data[4]  # "horizontal" or "keyboard"
+MONITOR_NAME = str(session_dlg.data[5]).strip() or MONITOR_NAME
 
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
 _out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.dat").resolve()
