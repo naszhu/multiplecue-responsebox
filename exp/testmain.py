@@ -122,6 +122,10 @@ MULTI_SAMPLE = True   # same as defult value, Anti-aliasing for smooth edges (pa
 NUM_SAMPLES = 4      # Samples per pixel when multiSample enabled
 CIRCLE_EDGES = 200   # Paradigm uses edges=200 for smooth circles (default ~32 is jagged)
 
+# Startup display validation (logged in .dat header; mismatch → warning screen: C = continue, ESC = exit)
+EXPECTED_REFRESH_HZ = 100
+REFRESH_RATE_TOLERANCE_HZ = 10
+
 # Possible reward values (points 1–4). 
 REWARD_VALUES = [1, 2, 3, 4]
 
@@ -396,6 +400,16 @@ def _write_psychopy_style_dat_header(
         f"Response keys: {[k.upper() for k in response_keys]}",
         f"Response deadline: {RESPONSE_DEADLINE}",
         "",
+        "Startup display check: after Window open, compare actual win.size to WIN_SIZE_PIX and "
+        f"win.getActualFrameRate() to {EXPECTED_REFRESH_HZ} Hz (±{REFRESH_RATE_TOLERANCE_HZ} Hz). "
+        "On mismatch, a full-screen message shows expected vs actual; C continues, ESC exits.",
+        f"Fixed refresh rate (expected, Hz): {EXPECTED_REFRESH_HZ}",
+        f"Measured refresh rate (Hz): {MEASURED_REFRESH_RATE:.6g}",
+        f"Expected resolution (px): {list(WIN_SIZE_PIX)}",
+        f"Actual window size (px): {list(ACTUAL_WIN_SIZE_PIX)}",
+        f"Display check passed spec: {'Y' if DISPLAY_CHECK_SPEC_OK else 'N'}",
+        f"Continued after mismatch warning: {'Y' if DISPLAY_CHECK_MISMATCH_CONTINUED else 'N'}",
+        "",
         f"Monitor name: {MONITOR_NAME}",
         f"Monitor set size: {list(WIN_SIZE_PIX)} pixels",
         f"Monitor width: {MONITOR_WIDTH_CM} cm",
@@ -430,6 +444,44 @@ def _append_dat_row(*, fp, columns: list[str], row: dict) -> None:
     fp.write("\t".join(_sanitize_dat_value(row.get(c, "")) for c in columns) + "\n")
 
 
+def _run_startup_display_check(win) -> tuple[float, tuple[int, int], bool, bool]:
+    """Require ~EXPECTED_REFRESH_HZ Hz and WIN_SIZE_PIX; if not, show warning and wait for C or ESC."""
+    actual = tuple(int(round(x)) for x in win.size)
+    try:
+        measured = float(win.getActualFrameRate())
+    except Exception:
+        measured = 0.0
+    res_ok = actual == tuple(WIN_SIZE_PIX)
+    hz_ok = measured > 0 and abs(measured - EXPECTED_REFRESH_HZ) <= REFRESH_RATE_TOLERANCE_HZ
+    spec_ok = res_ok and hz_ok
+    mismatch_continued = False
+    if not spec_ok:
+        msg = (
+            f"Display check failed.\n\n"
+            f"Expected: {WIN_SIZE_PIX[0]} x {WIN_SIZE_PIX[1]} px, ~{EXPECTED_REFRESH_HZ} Hz (±{REFRESH_RATE_TOLERANCE_HZ} Hz).\n\n"
+            f"Actual window size (px): {actual[0]} x {actual[1]}\n"
+            f"Measured refresh rate: {measured:.2f} Hz\n\n"
+            "Press C to continue anyway.\nPress ESCAPE to exit."
+        )
+        warn = visual.TextStim(
+            win,
+            text=msg,
+            color="white",
+            height=0.5,
+            units="deg",
+            wrapWidth=800 * STIM_FACTOR,
+        )
+        warn.draw()
+        win.flip()
+        keys = event.waitKeys(keyList=["c", "escape"])
+        if not keys or keys[0] == "escape":
+            win.close()
+            core.quit()
+            raise SystemExit("Display check: user chose exit.")
+        mismatch_continued = True
+    return measured, actual, spec_ok, mismatch_continued
+
+
 # Create window matching paradigm display settings
 mon = monitors.Monitor(MONITOR_NAME)
 mon.setSizePix(WIN_SIZE_PIX)
@@ -446,6 +498,10 @@ win = visual.Window(
     color=BG_COLOR,
     multiSample=MULTI_SAMPLE,
     numSamples=NUM_SAMPLES,
+)
+
+MEASURED_REFRESH_RATE, ACTUAL_WIN_SIZE_PIX, DISPLAY_CHECK_SPEC_OK, DISPLAY_CHECK_MISMATCH_CONTINUED = (
+    _run_startup_display_check(win)
 )
 
 # Define cue positions (4 locations, from POSITIONS_DEG)
