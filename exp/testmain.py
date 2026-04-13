@@ -97,8 +97,7 @@ FEEDBACK1_POS_DEG = (0, 70 * STIM_FACTOR)    # Feedback1 pos for Exp type 3
 FEEDBACK2_POS_DEG = (0, -70 * STIM_FACTOR)
 FEEDBACK3_POS_DEG = (0, -140 * STIM_FACTOR)
 FEEDBACK4_POS_DEG = (0, -200 * STIM_FACTOR)
-FEEDBACK_ZERO_REWARD_COLOR = (1, -1, -1)     # Red when reward=0
-FEEDBACK_POS_REWARD_COLOR = (-1, 0.7, -1)    # Green when reward>0
+FEEDBACK_TEXT_COLOR = (1, 1, 1)              # Uniform feedback color (no reward-dependent color)
 
 INSTRUCTION_LETTER_SIZE_DEG = 0.6  # InstructionLetterSize = 15*StimFactor
 
@@ -769,7 +768,7 @@ for trial_in_session in range(total_trials):
     # Duration: FEEDBACK_WAIT_TIME (1.5 s)
     # -------------------------------------------------------------------------
     feedback1.setText(str(actual_reward) + " / " + str(max_reward))  # e.g. "2 / 4"
-    feedback1.setColor(FEEDBACK_ZERO_REWARD_COLOR if actual_reward == 0 else FEEDBACK_POS_REWARD_COLOR)
+    feedback1.setColor(FEEDBACK_TEXT_COLOR)
     feedback2.setText("%.2f" % cum_reward)  # cumulative reward
     feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
     current_block = trial_data["block"]
