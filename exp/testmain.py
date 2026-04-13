@@ -271,8 +271,57 @@ def _build_trial_row(
     }
 
 
-def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: int, n_trials_total: int) -> None:
-    """Write a PsychoPy-style .dat header (human-readable metadata + column names)."""
+# Descriptions for each trial-data column (keys must match _build_trial_row).
+DAT_COLUMN_DESCRIPTIONS = {
+    "ExperimentName": "Short experiment label constant.",
+    "ExperimentNumber": "Numeric experiment ID constant.",
+    "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
+    "Subject": "Participant ID from the session dialog.",
+    "Session": "Session index written as 0-based internal index plus 1 (matches dialog session number).",
+    "Block": "Block number (1-based) within the session.",
+    "Trial": "Trial index within the session (1-based, increments across warmup and main).",
+    "WarmUpTrial": "1 if warmup trial, 0 if main trial.",
+    "CueCondition": "Label for number of cues shown this trial (e.g. 1cue, 4cue).",
+    "NumCues": "Count of cued stimulus locations this trial.",
+    "TrialStartJitterTime": "Duration of fixation before stimulus onset (ms); actual drawn jitter or DEBUG substitute.",
+    "CueSOA": "Cue–target stimulus onset asynchrony (ms); 0 here (no separate cue–mask SOA in this script).",
+    "Cues": "Four digits: color ID 1–4 at each spatial slot 0–3; 0 = no stimulus at that slot.",
+    "CueValues": "Four digits: reward digit at each slot; 0 = no reward at that slot.",
+    "CueRanks": "Four digits: within-trial rank from color IDs (larger color ID → larger rank digit).",
+    "Response": "Key pressed (lowercase) or timeout; escape not logged as a trial row.",
+    "RespLoc": "Four-digit one-hot: 1 at the index of the pressed response key (0–3), else 0; 0000 if no response.",
+    "PointTargetResponse": "1–4 = Red/Green/Blue/Yellow by response-key index when a key was pressed; 0 if timeout.",
+    "RT": "Reaction time (ms) from stimulus onset to keypress; timeout uses max wait; DEBUG uses artificial RT.",
+    "LateResponse": "True if RT (seconds) exceeded RESPONSE_DEADLINE; False otherwise.",
+    "ACC": "1 if obtained reward equals max possible reward on that trial and max > 0; else 0.",
+    "INTR": "1 if participant responded with a key whose mapped color was absent on screen; else 0.",
+    "CueResponseValue": "Reward points obtained from the chosen color’s on-screen location (0 if wrong/absent).",
+    "CueResponseExpValue": "Color ID (1–4) at the spatial slot tied to the pressed key; 0 if invalid.",
+    "CueRankResponse": "CueRanks digit at the pressed-key slot when valid; 0 if invalid.",
+    "ExpectedReward": "Reward digit at the screen location that shows the pressed color (0 if that color absent).",
+    "Reward": "Same as obtained points for this trial (CueResponseValue).",
+    "MaxReward": "Maximum reward digit among cued locations this trial.",
+    "CumReward": "Cumulative monetary-style score (points × REWARD_MONEY_FACTOR), running total.",
+    "CueTime": "Stimulus onset time from trial clock (ms).",
+    "PointTargetTime": "Time of keypress from trial clock (ms), or cue time if no RT.",
+    "ColorTargetTime": "Same as cue onset time here (ms); reserved for paradigms with separate color-target onset.",
+    "EndTrialTime": "Trial clock time (ms) at end of feedback phase.",
+    "Note": "Free-text notes (e.g. escape path); usually empty.",
+}
+
+
+def _write_psychopy_style_dat_header(
+    *,
+    fp,
+    exp_start_time_str: str,
+    n_blocks: int,
+    n_trials_total: int,
+    n_trials_per_block: int,
+    total_warmup: int,
+    cfg: dict,
+    dat_columns: list[str],
+) -> None:
+    """Write .dat preamble: trial settings, run metadata, column glossary, then caller adds TSV header row."""
     try:
         import psychopy  # local import keeps startup simple
         psychopy_version = getattr(psychopy, "__version__", "unknown")
@@ -280,13 +329,49 @@ def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: i
         psychopy_version = "unknown"
 
     program_name = Path(__file__).name
+    reward_set = cfg.get("reward_value_set", [])
+    n_reward_conds = len(reward_set)
+    reps_per_condition = (n_trials_per_block // n_reward_conds) if n_reward_conds else 0
+    debug_on = bool(DEBUG_CONFIG.get("enabled"))
+    jitter_note = (
+        f"DEBUG: fixation/jitter replaced by {DEBUG_CONFIG.get('trial_duration', 0) * 1000:.4f} ms when enabled."
+        if debug_on
+        else "Jitter sampled as min(offset + Exp(mean), max) per trial."
+    )
+
+    trial_lines = [
+        "=== Trial timing and design ===",
+        f"Cue SOA (ms): 0 (cues on screen with response window; no separate cue–mask SOA in this script).",
+        f"Trial start jitter — offset (s): {TRIAL_START_JITTER_OFFSET}",
+        f"Trial start jitter — exponential mean (s): {TRIAL_START_JITTER_MEAN}",
+        f"Trial start jitter — max cap (s): {TRIAL_START_JITTER_MAX}",
+        f"Trial start jitter — note: {jitter_note}",
+        f"Response key wait max (s): {MAX_WAIT_TIME}",
+        f"Late response threshold (s): {RESPONSE_DEADLINE}",
+        f"Feedback duration (s): {FEEDBACK_WAIT_TIME} (DEBUG short_feedback may shorten).",
+        f"Warmup trials — first block: {FIRST_WARMUP_TRIALS}",
+        f"Warmup trials — other blocks: {OTHER_WARMUP_TRIALS}",
+        f"Blocks: {n_blocks}",
+        f"Main trials per block: {n_trials_per_block}",
+        f"Total warmup trials: {total_warmup}",
+        f"Total trials (warmup + main): {n_trials_total}",
+        f"Single stimulus at center (session design): {cfg.get('center', False)}",
+        f"Color-key legend on screen (sessions 1–3 only): {SESSION in (1, 2, 3)}",
+        f"Reward value conditions (reward_value_set): {reward_set}",
+        f"Number of reward conditions: {n_reward_conds}",
+        f"Main trials per reward condition per block (balanced): {reps_per_condition}",
+        f"Color-to-key mapping (pos 0–3 = Red/Green/Blue/Yellow): {[k.upper() for k in COLOR_KEYS]}",
+        "",
+    ]
 
     header_lines = [
+        "=== Run and display metadata ===",
         f"PsychoPy version: {psychopy_version}",
         f"Experimental Program: {program_name}",
         f"Experiment Name: {EXPERIMENT_NAME}",
         f"Experiment Number: {EXPERIMENT_NUMBER}",
         f"Exp start time: {exp_start_time_str}",
+        f"DEBUG_CONFIG enabled: {debug_on}",
         "",
         f"Subject: {PARTICIPANT}",
         f"Age: {AGE}",
@@ -296,12 +381,10 @@ def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: i
         f"Session: {SESSION}",
         f"Number of Blocks: {n_blocks}",
         f"Total number of trials: {n_trials_total}",
-        f"Warmup trials 1st block: {FIRST_WARMUP_TRIALS}",
-        f"Warmup trials other blocks: {OTHER_WARMUP_TRIALS}",
         "",
         f"Reward Money Factor: {REWARD_MONEY_FACTOR}",
         "",
-        "Full screen: Y",
+        f"Full screen: {'Y' if DEBUG_CONFIG.get('full_screen', True) else 'N'}",
         f"Response keys: {[k.upper() for k in response_keys]}",
         f"Response deadline: {RESPONSE_DEADLINE}",
         "",
@@ -316,9 +399,14 @@ def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: i
         f"Stimulus opacity: {STIMULUS_OPACITY}",
         f"Stimulus target RGB color values: {STIMULUS_TARGET_COLORS_RGB}",
         "",
-        "",
+        "=== Column definitions (tab-separated data below) ===",
     ]
-    fp.write("\n".join(header_lines))
+    for col in dat_columns:
+        desc = DAT_COLUMN_DESCRIPTIONS.get(col, "No description defined.")
+        header_lines.append(f"{col}: {desc}")
+    header_lines.extend(["", ""])
+
+    fp.write("\n".join(trial_lines + header_lines))
 
 
 def _sanitize_dat_value(v):
@@ -827,6 +915,10 @@ for trial_in_session in range(total_trials):
                 exp_start_time_str=exp_start_time_str,
                 n_blocks=n_blocks,
                 n_trials_total=total_trials,
+                n_trials_per_block=n_trials_per_block,
+                total_warmup=total_warmup,
+                cfg=cfg,
+                dat_columns=dat_columns,
             )
             fp.write("\t".join(dat_columns) + "\n")
         _append_dat_row(fp=fp, columns=dat_columns, row=row)
