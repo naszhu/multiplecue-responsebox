@@ -12,6 +12,7 @@ Display flow (win.flip locations):
 """
 import math
 import random
+import time
 from itertools import combinations, permutations
 from pathlib import Path
 from datetime import datetime
@@ -38,7 +39,7 @@ MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experiment
 SESSION_CONFIG = [
     {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": True, "color_map": True},
     {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": False, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": True},
     {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": False},
     {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
     {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 8, "n_per_block": 50, "center": False, "color_map": False},
@@ -202,6 +203,8 @@ def _build_trial_row(
     trial_index,
     warm_up=0,
     trial_start_jitter_time_ms=0,
+    trial_wall_clock_str="",
+    session_elapsed_sec=0.0,
 ):
     """Build a trial data row """
     # Color layout: 4-digit strings (position 0..3). Rewards from position_to_reward.
@@ -267,6 +270,8 @@ def _build_trial_row(
         "PointTargetTime": round((cue_time + rt_sec) * 1000, 2) if rt_sec else round(cue_time * 1000, 2),  # ms
         "ColorTargetTime": round(cue_time * 1000, 2),  # ms
         "EndTrialTime": round(end_trial_time * 1000, 2),  # ms
+        "TrialWallClockTime": trial_wall_clock_str,
+        "SessionElapsedSec": round(session_elapsed_sec, 3),
         "Note": "",
     }
 
@@ -306,6 +311,8 @@ DAT_COLUMN_DESCRIPTIONS = {
     "PointTargetTime": "Time of keypress from trial clock (ms), or cue time if no RT.",
     "ColorTargetTime": "Same as cue onset time here (ms); reserved for paradigms with separate color-target onset.",
     "EndTrialTime": "Trial clock time (ms) at end of feedback phase.",
+    "TrialWallClockTime": "Local wall-clock date and time when this trial row was logged (YYYY-MM-DD HH:MM:SS.mmm).",
+    "SessionElapsedSec": "Seconds since session timing start (monotonic clock), from immediately before the first trial loop iteration after instructions.",
     "Note": "Free-text notes (e.g. escape path); usually empty.",
 }
 
@@ -361,6 +368,7 @@ def _write_psychopy_style_dat_header(
         f"Number of reward conditions: {n_reward_conds}",
         f"Main trials per reward condition per block (balanced): {reps_per_condition}",
         f"Color-to-key mapping (pos 0–3 = Red/Green/Blue/Yellow): {[k.upper() for k in COLOR_KEYS]}",
+        "Per-trial logging: TrialWallClockTime = local time when row is written; SessionElapsedSec = monotonic seconds since pre-loop session start.",
         "",
     ]
 
@@ -707,6 +715,7 @@ first_trial_save = True  # Write header on first trial
 completed_normally = True
 exp_start_time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 dat_columns = None
+session_start_perf = time.perf_counter()
 
 # =============================================================================
 # TRIAL LOOP
@@ -884,6 +893,10 @@ for trial_in_session in range(total_trials):
     )
     end_trial_time = clock.getTime()
 
+    _now = datetime.now()
+    trial_wall_clock_str = _now.strftime("%Y-%m-%d %H:%M:%S") + f".{_now.microsecond // 1000:03d}"
+    session_elapsed_sec = time.perf_counter() - session_start_perf
+
     # Build paradigm-style trial row
     row = _build_trial_row(
         position_to_color_id=position_to_color_id,
@@ -904,6 +917,8 @@ for trial_in_session in range(total_trials):
         trial_index=trial_index,
         warm_up=trial_data["warm_up"],
         trial_start_jitter_time_ms=trial_start_jitter_time_ms,
+        trial_wall_clock_str=trial_wall_clock_str,
+        session_elapsed_sec=session_elapsed_sec,
     )
 
     if dat_columns is None:
