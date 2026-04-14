@@ -12,6 +12,7 @@ Display flow (win.flip locations):
 """
 import math
 import random
+import time
 from itertools import combinations, permutations
 from pathlib import Path
 from datetime import datetime
@@ -21,11 +22,12 @@ from psychopy import gui, logging, visual, core, event, monitors
 logging.console.setLevel(logging.DEBUG)
 # Centralized debug switches. Add new toggles here as needed.
 DEBUG_CONFIG = {
-    "enabled": True,
+    "enabled": False,
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
     "auto_advance_instructions": False,
     "auto_respond": True,
     "short_feedback": True,
+    "full_screen": True,  # Toggle fullscreen quickly during testing
 }
 # Constants 
 EXPERIMENT_NAME = "CCP"
@@ -37,7 +39,7 @@ MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experiment
 SESSION_CONFIG = [
     {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": True, "color_map": True},
     {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": False, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": True},
+    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": True},
     {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": False},
     {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
     {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 8, "n_per_block": 50, "center": False, "color_map": False},
@@ -96,8 +98,8 @@ FEEDBACK1_POS_DEG = (0, 70 * STIM_FACTOR)    # Feedback1 pos for Exp type 3
 FEEDBACK2_POS_DEG = (0, -70 * STIM_FACTOR)
 FEEDBACK3_POS_DEG = (0, -140 * STIM_FACTOR)
 FEEDBACK4_POS_DEG = (0, -200 * STIM_FACTOR)
-FEEDBACK_ZERO_REWARD_COLOR = (1, -1, -1)     # Red when reward=0
-FEEDBACK_POS_REWARD_COLOR = (-1, 0.7, -1)    # Green when reward>0
+FEEDBACK_TEXT_COLOR = (1, 1, 1)              # Uniform feedback color (no reward-dependent color)
+TOO_SLOW_TEXT = "TOO SLOW!"
 
 INSTRUCTION_LETTER_SIZE_DEG = 0.6  # InstructionLetterSize = 15*StimFactor
 
@@ -110,7 +112,8 @@ COLOR_MAP_Y_DEG = -150 * STIM_FACTOR            # -6 deg
 
 # Display / monitor (match paradigm exactly)
 WIN_SIZE_PIX = (1920, 1080)
-MONITOR_NAME = "OF2A_03_5_513_lab5"
+MONITOR_NAME = "room1_a1"
+MONITOR_CHOICES = [f"room1_a{i}" for i in range(1, 11)]
 MONITOR_WIDTH_CM = 52
 MONITOR_DISTANCE_CM = 60
 USE_UNITS = "deg"
@@ -118,6 +121,10 @@ USE_COLOR_SPACE = "rgb" #same as the defult value
 MULTI_SAMPLE = True   # same as defult value, Anti-aliasing for smooth edges (paradigm has smooth circles)
 NUM_SAMPLES = 4      # Samples per pixel when multiSample enabled
 CIRCLE_EDGES = 200   # Paradigm uses edges=200 for smooth circles (default ~32 is jagged)
+
+# Startup display validation (logged in .dat header; mismatch → warning screen: C = continue, ESC = exit)
+EXPECTED_REFRESH_HZ = 100
+REFRESH_RATE_TOLERANCE_HZ = 10
 
 # Possible reward values (points 1–4). 
 REWARD_VALUES = [1, 2, 3, 4]
@@ -141,6 +148,11 @@ session_dlg.addField(
     choices=["horizontal", "keyboard"],
     tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Sessions 1–3)",
 )
+session_dlg.addField(
+    "Monitor name",
+    initial=MONITOR_NAME,
+    choices=MONITOR_CHOICES,
+)
 session_dlg.show()
 if not session_dlg.OK:
     raise SystemExit("Session dialog cancelled")
@@ -151,6 +163,7 @@ if SESSION < 1 or SESSION > MAX_SESSION:
 AGE = str(session_dlg.data[2]).strip() or "NA"
 GENDER = str(session_dlg.data[3]).strip() or "NA"
 COLOR_MAP_LAYOUT = session_dlg.data[4]  # "horizontal" or "keyboard"
+MONITOR_NAME = str(session_dlg.data[5]).strip() or MONITOR_NAME
 
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
 _out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.dat").resolve()
@@ -194,6 +207,8 @@ def _build_trial_row(
     trial_index,
     warm_up=0,
     trial_start_jitter_time_ms=0,
+    trial_wall_clock_str="",
+    session_elapsed_sec=0.0,
 ):
     """Build a trial data row """
     # Color layout: 4-digit strings (position 0..3). Rewards from position_to_reward.
@@ -259,12 +274,65 @@ def _build_trial_row(
         "PointTargetTime": round((cue_time + rt_sec) * 1000, 2) if rt_sec else round(cue_time * 1000, 2),  # ms
         "ColorTargetTime": round(cue_time * 1000, 2),  # ms
         "EndTrialTime": round(end_trial_time * 1000, 2),  # ms
+        "TrialWallClockTime": trial_wall_clock_str,
+        "SessionElapsedSec": round(session_elapsed_sec, 3),
         "Note": "",
     }
 
 
-def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: int, n_trials_total: int) -> None:
-    """Write a PsychoPy-style .dat header (human-readable metadata + column names)."""
+# Descriptions for each trial-data column (keys must match _build_trial_row).
+DAT_COLUMN_DESCRIPTIONS = {
+    "ExperimentName": "Short experiment label constant.",
+    "ExperimentNumber": "Numeric experiment ID constant.",
+    "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
+    "Subject": "Participant ID from the session dialog.",
+    "Session": "Session index written as 0-based internal index plus 1 (matches dialog session number).",
+    "Block": "Block number (1-based) within the session.",
+    "Trial": "Trial index within the session (1-based, increments across warmup and main).",
+    "WarmUpTrial": "1 if warmup trial, 0 if main trial.",
+    "CueCondition": "Label for number of cues shown this trial (e.g. 1cue, 4cue).",
+    "NumCues": "Count of cued stimulus locations this trial.",
+    "TrialStartJitterTime": "Duration of fixation before stimulus onset (ms); actual drawn jitter or DEBUG substitute.",
+    "CueSOA": "Cue–target stimulus onset asynchrony (ms); 0 here (no separate cue–mask SOA in this script).",
+    "Cues": "Four digits: color ID 1–4 at each spatial slot 0–3; 0 = no stimulus at that slot.",
+    "CueValues": "Four digits: reward digit at each slot; 0 = no reward at that slot.",
+    "CueRanks": "Four digits: within-trial rank from color IDs (larger color ID → larger rank digit).",
+    "Response": "Key pressed (lowercase) or timeout; escape not logged as a trial row.",
+    "RespLoc": "Four-digit one-hot: 1 at the index of the pressed response key (0–3), else 0; 0000 if no response.",
+    "PointTargetResponse": "1–4 = Red/Green/Blue/Yellow by response-key index when a key was pressed; 0 if timeout.",
+    "RT": "Reaction time (ms) from stimulus onset to keypress; timeout uses max wait; DEBUG uses artificial RT.",
+    "LateResponse": "True if RT (seconds) exceeded RESPONSE_DEADLINE; False otherwise.",
+    "ACC": "1 if obtained reward equals max possible reward on that trial and max > 0; else 0.",
+    "INTR": "1 if participant responded with a key whose mapped color was absent on screen; else 0.",
+    "CueResponseValue": "Reward points obtained from the chosen color’s on-screen location (0 if wrong/absent).",
+    "CueResponseExpValue": "Color ID (1–4) at the spatial slot tied to the pressed key; 0 if invalid.",
+    "CueRankResponse": "CueRanks digit at the pressed-key slot when valid; 0 if invalid.",
+    "ExpectedReward": "Reward digit at the screen location that shows the pressed color (0 if that color absent).",
+    "Reward": "Same as obtained points for this trial (CueResponseValue).",
+    "MaxReward": "Maximum reward digit among cued locations this trial.",
+    "CumReward": "Cumulative monetary-style score (points × REWARD_MONEY_FACTOR), running total.",
+    "CueTime": "Stimulus onset time from trial clock (ms).",
+    "PointTargetTime": "Time of keypress from trial clock (ms), or cue time if no RT.",
+    "ColorTargetTime": "Same as cue onset time here (ms); reserved for paradigms with separate color-target onset.",
+    "EndTrialTime": "Trial clock time (ms) at end of feedback phase.",
+    "TrialWallClockTime": "Local wall-clock date and time when this trial row was logged (YYYY-MM-DD HH:MM:SS.mmm).",
+    "SessionElapsedSec": "Seconds since session timing start (monotonic clock), from immediately before the first trial loop iteration after instructions.",
+    "Note": "Free-text notes (e.g. escape path); usually empty.",
+}
+
+
+def _write_psychopy_style_dat_header(
+    *,
+    fp,
+    exp_start_time_str: str,
+    n_blocks: int,
+    n_trials_total: int,
+    n_trials_per_block: int,
+    total_warmup: int,
+    cfg: dict,
+    dat_columns: list[str],
+) -> None:
+    """Write .dat preamble: trial settings, run metadata, column glossary, then caller adds TSV header row."""
     try:
         import psychopy  # local import keeps startup simple
         psychopy_version = getattr(psychopy, "__version__", "unknown")
@@ -272,13 +340,50 @@ def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: i
         psychopy_version = "unknown"
 
     program_name = Path(__file__).name
+    reward_set = cfg.get("reward_value_set", [])
+    n_reward_conds = len(reward_set)
+    reps_per_condition = (n_trials_per_block // n_reward_conds) if n_reward_conds else 0
+    debug_on = bool(DEBUG_CONFIG.get("enabled"))
+    jitter_note = (
+        f"DEBUG: fixation/jitter replaced by {DEBUG_CONFIG.get('trial_duration', 0) * 1000:.4f} ms when enabled."
+        if debug_on
+        else "Jitter sampled as min(offset + Exp(mean), max) per trial."
+    )
+
+    trial_lines = [
+        "=== Trial timing and design ===",
+        f"Cue SOA (ms): 0 (cues on screen with response window; no separate cue–mask SOA in this script).",
+        f"Trial start jitter — offset (s): {TRIAL_START_JITTER_OFFSET}",
+        f"Trial start jitter — exponential mean (s): {TRIAL_START_JITTER_MEAN}",
+        f"Trial start jitter — max cap (s): {TRIAL_START_JITTER_MAX}",
+        f"Trial start jitter — note: {jitter_note}",
+        f"Response key wait max (s): {MAX_WAIT_TIME}",
+        f"Late response threshold (s): {RESPONSE_DEADLINE}",
+        f"Feedback duration (s): {FEEDBACK_WAIT_TIME} (DEBUG short_feedback may shorten).",
+        f"Warmup trials — first block: {FIRST_WARMUP_TRIALS}",
+        f"Warmup trials — other blocks: {OTHER_WARMUP_TRIALS}",
+        f"Blocks: {n_blocks}",
+        f"Main trials per block: {n_trials_per_block}",
+        f"Total warmup trials: {total_warmup}",
+        f"Total trials (warmup + main): {n_trials_total}",
+        f"Single stimulus at center (session design): {cfg.get('center', False)}",
+        f"Color-key legend on screen (sessions 1–3 only): {SESSION in (1, 2, 3)}",
+        f"Reward value conditions (reward_value_set): {reward_set}",
+        f"Number of reward conditions: {n_reward_conds}",
+        f"Main trials per reward condition per block (balanced): {reps_per_condition}",
+        f"Color-to-key mapping (pos 0–3 = Red/Green/Blue/Yellow): {[k.upper() for k in COLOR_KEYS]}",
+        "Per-trial logging: TrialWallClockTime = local time when row is written; SessionElapsedSec = monotonic seconds since pre-loop session start.",
+        "",
+    ]
 
     header_lines = [
+        "=== Run and display metadata ===",
         f"PsychoPy version: {psychopy_version}",
         f"Experimental Program: {program_name}",
         f"Experiment Name: {EXPERIMENT_NAME}",
         f"Experiment Number: {EXPERIMENT_NUMBER}",
         f"Exp start time: {exp_start_time_str}",
+        f"DEBUG_CONFIG enabled: {debug_on}",
         "",
         f"Subject: {PARTICIPANT}",
         f"Age: {AGE}",
@@ -288,14 +393,22 @@ def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: i
         f"Session: {SESSION}",
         f"Number of Blocks: {n_blocks}",
         f"Total number of trials: {n_trials_total}",
-        f"Warmup trials 1st block: {FIRST_WARMUP_TRIALS}",
-        f"Warmup trials other blocks: {OTHER_WARMUP_TRIALS}",
         "",
         f"Reward Money Factor: {REWARD_MONEY_FACTOR}",
         "",
-        "Full screen: Y",
+        f"Full screen: {'Y' if DEBUG_CONFIG.get('full_screen', True) else 'N'}",
         f"Response keys: {[k.upper() for k in response_keys]}",
         f"Response deadline: {RESPONSE_DEADLINE}",
+        "",
+        "Startup display check: after Window open, compare actual win.size to WIN_SIZE_PIX and "
+        f"win.getActualFrameRate() to {EXPECTED_REFRESH_HZ} Hz (±{REFRESH_RATE_TOLERANCE_HZ} Hz). "
+        "On mismatch, a full-screen message shows expected vs actual; C continues, ESC exits.",
+        f"Fixed refresh rate (expected, Hz): {EXPECTED_REFRESH_HZ}",
+        f"Measured refresh rate (Hz): {MEASURED_REFRESH_RATE:.6g}",
+        f"Expected resolution (px): {list(WIN_SIZE_PIX)}",
+        f"Actual window size (px): {list(ACTUAL_WIN_SIZE_PIX)}",
+        f"Display check passed spec: {'Y' if DISPLAY_CHECK_SPEC_OK else 'N'}",
+        f"Continued after mismatch warning: {'Y' if DISPLAY_CHECK_MISMATCH_CONTINUED else 'N'}",
         "",
         f"Monitor name: {MONITOR_NAME}",
         f"Monitor set size: {list(WIN_SIZE_PIX)} pixels",
@@ -308,9 +421,14 @@ def _write_psychopy_style_dat_header(*, fp, exp_start_time_str: str, n_blocks: i
         f"Stimulus opacity: {STIMULUS_OPACITY}",
         f"Stimulus target RGB color values: {STIMULUS_TARGET_COLORS_RGB}",
         "",
-        "",
+        "=== Column definitions (tab-separated data below) ===",
     ]
-    fp.write("\n".join(header_lines))
+    for col in dat_columns:
+        desc = DAT_COLUMN_DESCRIPTIONS.get(col, "No description defined.")
+        header_lines.append(f"{col}: {desc}")
+    header_lines.extend(["", ""])
+
+    fp.write("\n".join(trial_lines + header_lines))
 
 
 def _sanitize_dat_value(v):
@@ -326,6 +444,44 @@ def _append_dat_row(*, fp, columns: list[str], row: dict) -> None:
     fp.write("\t".join(_sanitize_dat_value(row.get(c, "")) for c in columns) + "\n")
 
 
+def _run_startup_display_check(win) -> tuple[float, tuple[int, int], bool, bool]:
+    """Require ~EXPECTED_REFRESH_HZ Hz and WIN_SIZE_PIX; if not, show warning and wait for C or ESC."""
+    actual = tuple(int(round(x)) for x in win.size)
+    try:
+        measured = float(win.getActualFrameRate())
+    except Exception:
+        measured = 0.0
+    res_ok = actual == tuple(WIN_SIZE_PIX)
+    hz_ok = measured > 0 and abs(measured - EXPECTED_REFRESH_HZ) <= REFRESH_RATE_TOLERANCE_HZ
+    spec_ok = res_ok and hz_ok
+    mismatch_continued = False
+    if not spec_ok:
+        msg = (
+            f"Display check failed.\n\n"
+            f"Expected: {WIN_SIZE_PIX[0]} x {WIN_SIZE_PIX[1]} px, ~{EXPECTED_REFRESH_HZ} Hz (±{REFRESH_RATE_TOLERANCE_HZ} Hz).\n\n"
+            f"Actual window size (px): {actual[0]} x {actual[1]}\n"
+            f"Measured refresh rate: {measured:.2f} Hz\n\n"
+            "Press C to continue anyway.\nPress ESCAPE to exit."
+        )
+        warn = visual.TextStim(
+            win,
+            text=msg,
+            color="white",
+            height=0.5,
+            units="deg",
+            wrapWidth=800 * STIM_FACTOR,
+        )
+        warn.draw()
+        win.flip()
+        keys = event.waitKeys(keyList=["c", "escape"])
+        if not keys or keys[0] == "escape":
+            win.close()
+            core.quit()
+            raise SystemExit("Display check: user chose exit.")
+        mismatch_continued = True
+    return measured, actual, spec_ok, mismatch_continued
+
+
 # Create window matching paradigm display settings
 mon = monitors.Monitor(MONITOR_NAME)
 mon.setSizePix(WIN_SIZE_PIX)
@@ -334,7 +490,7 @@ mon.setDistance(MONITOR_DISTANCE_CM)
 mon.saveMon()
 win = visual.Window(
     size=WIN_SIZE_PIX,
-    fullscr=True,
+    fullscr=DEBUG_CONFIG["full_screen"],
     allowGUI=True,
     units=USE_UNITS,
     colorSpace=USE_COLOR_SPACE,
@@ -342,6 +498,10 @@ win = visual.Window(
     color=BG_COLOR,
     multiSample=MULTI_SAMPLE,
     numSamples=NUM_SAMPLES,
+)
+
+MEASURED_REFRESH_RATE, ACTUAL_WIN_SIZE_PIX, DISPLAY_CHECK_SPEC_OK, DISPLAY_CHECK_MISMATCH_CONTINUED = (
+    _run_startup_display_check(win)
 )
 
 # Define cue positions (4 locations, from POSITIONS_DEG)
@@ -611,6 +771,7 @@ first_trial_save = True  # Write header on first trial
 completed_normally = True
 exp_start_time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 dat_columns = None
+session_start_perf = time.perf_counter()
 
 # =============================================================================
 # TRIAL LOOP
@@ -760,8 +921,14 @@ for trial_in_session in range(total_trials):
     # Presented: actual/max reward, cumulative reward, RT, block/trial info, fixation
     # Duration: FEEDBACK_WAIT_TIME (1.5 s)
     # -------------------------------------------------------------------------
-    feedback1.setText(str(actual_reward) + " / " + str(max_reward))  # e.g. "2 / 4"
-    feedback1.setColor(FEEDBACK_ZERO_REWARD_COLOR if actual_reward == 0 else FEEDBACK_POS_REWARD_COLOR)
+    timed_out = (not keys)
+    if timed_out:
+        feedback1.setText(TOO_SLOW_TEXT)
+        feedback1.bold = True
+    else:
+        feedback1.setText(str(actual_reward) + " / " + str(max_reward))  # e.g. "2 / 4"
+        feedback1.bold = False
+    feedback1.setColor(FEEDBACK_TEXT_COLOR)
     feedback2.setText("%.2f" % cum_reward)  # cumulative reward
     feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
     current_block = trial_data["block"]
@@ -781,6 +948,10 @@ for trial_in_session in range(total_trials):
         else FEEDBACK_WAIT_TIME
     )
     end_trial_time = clock.getTime()
+
+    _now = datetime.now()
+    trial_wall_clock_str = _now.strftime("%Y-%m-%d %H:%M:%S") + f".{_now.microsecond // 1000:03d}"
+    session_elapsed_sec = time.perf_counter() - session_start_perf
 
     # Build paradigm-style trial row
     row = _build_trial_row(
@@ -802,6 +973,8 @@ for trial_in_session in range(total_trials):
         trial_index=trial_index,
         warm_up=trial_data["warm_up"],
         trial_start_jitter_time_ms=trial_start_jitter_time_ms,
+        trial_wall_clock_str=trial_wall_clock_str,
+        session_elapsed_sec=session_elapsed_sec,
     )
 
     if dat_columns is None:
@@ -813,6 +986,10 @@ for trial_in_session in range(total_trials):
                 exp_start_time_str=exp_start_time_str,
                 n_blocks=n_blocks,
                 n_trials_total=total_trials,
+                n_trials_per_block=n_trials_per_block,
+                total_warmup=total_warmup,
+                cfg=cfg,
+                dat_columns=dat_columns,
             )
             fp.write("\t".join(dat_columns) + "\n")
         _append_dat_row(fp=fp, columns=dat_columns, row=row)
