@@ -115,10 +115,15 @@ timeout_prop <- timeout_n / nrow(rt_base_df)
 cat(sprintf("Timeout trials removed: %d / %d (%.2f%%)\n",
             timeout_n, nrow(rt_base_df), 100 * timeout_prop))
 
+condition_levels <- names(reward_sets)
+
 rt_no_timeout_df <- rt_base_df %>%
   filter(!grepl("timeout", Response, ignore.case = TRUE)) %>%
   mutate(RT_num = suppressWarnings(as.numeric(RT))) %>%
-  filter(!is.na(RT_num))
+  filter(!is.na(RT_num)) %>% mutate(
+    Condition = factor(Condition, levels = condition_levels),
+    # DataGroup = factor(DataGroup, levels = names(group_definitions))
+  )
 
 rt_plot_df <- rt_no_timeout_df 
 
@@ -144,8 +149,8 @@ fig_file <- file.path(
 ggsave(filename = fig_file, plot = rt_distribution_plot, width = 12, height = 8, dpi = 300)
 
 rt_density_plot <- ggplot(rt_plot_df, aes(x = RT_num)) +
-  geom_density(fill = "#72B7B2", alpha = 0.5, color = "#1F4E79", linewidth = 0.6) +
-  facet_wrap(~Condition, scales = "free_y") +
+  geom_density( alpha = 0.5, aes(color = Condition), linewidth = 0.6) +
+  # facet_wrap(~Condition, scales = "free_y") +
   labs(
     title = "RT Density by Cue Reward Condition",
     x = "Reaction Time (RT)",
@@ -158,6 +163,71 @@ rt_density_plot <- ggplot(rt_plot_df, aes(x = RT_num)) +
 
 density_fig_file <- file.path(
   fig_dir,
-  paste0("rt_density_by_condition_", format(Sys.Date(), "%Y-%m-%d"), ".png")
+  paste0("rt_density_by_condition_ex", format(Sys.Date(), "%Y-%m-%d"), ".png")
 )
 ggsave(filename = density_fig_file, plot = rt_density_plot, width = 12, height = 8, dpi = 300)
+
+# ------------------------------------------------------------
+# Cumulative session-group RT density comparison
+# ------------------------------------------------------------
+condition_levels <- names(reward_sets)
+
+group_definitions <- list(
+  "Data1_6to8" = 6:8,
+  "Data2_6to11" = 6:11,
+  "Data3_6to14" = 11:14,
+  "Data4_6to17" = 6:17
+)
+
+rt_no_timeout_df=rt_no_timeout_df%>% filter(SessionNum != 6)
+data1 <- rt_no_timeout_df %>%
+  filter(SessionNum %in% group_definitions[["Data1_6to8"]]) %>%
+  transmute(RT_num, Condition, DataGroup = "Data1_6to8")
+
+data2 <- rt_no_timeout_df %>%
+  filter(SessionNum %in% group_definitions[["Data2_6to11"]]) %>%
+  transmute(RT_num, Condition, DataGroup = "Data2_6to11")
+
+data3 <- rt_no_timeout_df %>%
+  filter(SessionNum %in% group_definitions[["Data3_6to14"]]) %>%
+  transmute(RT_num, Condition, DataGroup = "Data3_6to14")
+
+data4 <- rt_no_timeout_df %>%
+  filter(SessionNum %in% group_definitions[["Data4_6to17"]]) %>%
+  transmute(RT_num, Condition, DataGroup = "Data4_6to17")
+
+cumulative_group_df <- bind_rows(data1, data2, data3, data4)
+
+cumulative_group_df <- cumulative_group_df %>%
+  mutate(
+    Condition = factor(Condition, levels = condition_levels),
+    DataGroup = factor(DataGroup, levels = names(group_definitions))
+  )
+
+rt_density_group_plot <- ggplot(
+  cumulative_group_df,
+  aes(
+    x = RT_num,
+    color = DataGroup,
+    linetype = DataGroup,
+    group = interaction(Condition, DataGroup)
+  )
+) +
+  geom_density(linewidth = 0.9, adjust = 1) +
+  facet_wrap(~Condition, scales = "free_y") +
+  labs(
+    title = "RT Density by Condition Across Cumulative Session Groups",
+    x = "Reaction Time (RT)",
+    y = "Density",
+    color = "Cumulative Group"
+  ) +
+  scale_color_brewer(palette = "Dark2") +
+  coord_cartesian(xlim = c(0, 2000)) +
+  guides(linetype = guide_legend(title = "Cumulative Group")) +
+  theme_minimal()
+
+cumulative_density_fig_file <- file.path(
+  fig_dir,
+  paste0("rt_density_cumulative_groups_by_condition_3", format(Sys.Date(), "%Y-%m-%d"), ".png")
+)
+ggsave(filename = cumulative_density_fig_file, plot = rt_density_group_plot, width = 13, height = 9, dpi = 300)
