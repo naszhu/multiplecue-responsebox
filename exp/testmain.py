@@ -579,6 +579,8 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
     """
     Enumerate all trial variants for a reward-value condition.
 
+    reward_values comes from the cfg["reward_value_set"], example: (1, 2), (1, 3), (1, 4), (2, 3), (2, 4), (3, 4)
+
     Output format:
       {"position_to_color_id": {0..3: color_id 1–4 or None},
        "position_to_reward": {0..3: reward (1–4) or None}}
@@ -590,7 +592,7 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
         return {
             "position_to_color_id": position_to_color_id,
             "position_to_reward": position_to_reward,
-            "reward_condition_values": tuple(sorted(reward_values)),
+            "reward_condition_values": tuple(reward_values), #gives example: (1, 2)
         }
 
     n_positions = NUM_POSITIONS
@@ -659,6 +661,11 @@ def _build_trials(cfg: dict) -> list:
 
         # Main block
         main_block = _make_block()
+        # {
+        # "position_to_color_id": {0: 3, 1: 1, 2: 4, 3: 2},
+        # "position_to_reward": {0: None, 1: 1, 2: None, 3: 4},
+        # "reward_condition_values": (1, 4)
+        # }
 
         for i, t in enumerate(warmup_trials):
             trials.append({**t, "warm_up": 1, "block": block_number, "trial_in_block": i + 1})
@@ -667,6 +674,16 @@ def _build_trials(cfg: dict) -> list:
     return trials
 
 trial_data_list = _build_trials(cfg)
+
+# trial_data_list[i] = {
+#   "position_to_color_id": {...},
+#   "position_to_reward": {...},
+#   "reward_condition_values": (1, 2),   # or (1,), (4,), etc.
+#   "warm_up": 1 or 0,
+#   "block": 1-based block number,
+#   "trial_in_block": 1-based index within that block (including warmup)
+# }
+
 
 # Fixation point (match paradigm: visual.Circle, size=FixationSize, FixationPointColor)
 fixation = visual.Circle(
