@@ -1,4 +1,5 @@
 library(dplyr)
+library(ggplot2)
 
 csv_dir <- "exp/data_from_lab/extracted data"
 csv_files <- list.files(csv_dir, pattern = "\\.csv$", full.names = TRUE)
@@ -17,15 +18,15 @@ combined_df[target_cols] <- lapply(combined_df[target_cols], as.character)
 combined_df <- combined_df %>%
   mutate(
     SessionNum = suppressWarnings(as.integer(Session)),
-    SessionType = if_else(!is.na(SessionNum) & SessionNum > 6, "Experiment", "NonExperiment")
-  )
+    SessionType = if_else(!is.na(SessionNum) & SessionNum >= 6 , "Experiment", "NonExperiment")
+  ) %>% as_tibble()
 
 experiment_df <- combined_df %>% filter(SessionType == "Experiment")
 nonexperiment_df <- combined_df %>% filter(SessionType == "NonExperiment")
 
 # ------------------------------------------------------------
 # 2) Add Condition from CueValues (10 reward conditions)
-#    Safe play #1: sorted nonzero rewards must match one of 10 sets
+#    Safe play #1: sorted nonzero rewards must match one of 10 set
 #    Safe play #2: original CueValues must match allowed slot patterns
 # -----------------------------------------------------------
 reward_sets <- list(
@@ -98,3 +99,65 @@ session_counts <- analysis_df %>%
 avg_trials_per_session_by_condition <- session_counts %>%
   group_by(Condition) %>%
   summarize(avg_n_per_session = mean(n), .groups = "drop")
+
+# ------------------------------------------------------------
+# RT distribution analysis by Condition
+# ------------------------------------------------------------
+rt_base_df <- combined_df %>%
+  filter(SessionType == "Experiment") %>%
+  filter(WarmUpTrial == "0") %>%
+  filter(!is.na(Condition))
+
+timeout_flag <- grepl("timeout", rt_base_df$Response, ignore.case = TRUE)
+timeout_n <- sum(timeout_flag, na.rm = TRUE)
+timeout_prop <- timeout_n / nrow(rt_base_df)
+
+cat(sprintf("Timeout trials removed: %d / %d (%.2f%%)\n",
+            timeout_n, nrow(rt_base_df), 100 * timeout_prop))
+
+rt_no_timeout_df <- rt_base_df %>%
+  filter(!grepl("timeout", Response, ignore.case = TRUE)) %>%
+  mutate(RT_num = suppressWarnings(as.numeric(RT))) %>%
+  filter(!is.na(RT_num))
+
+rt_plot_df <- rt_no_timeout_df 
+
+rt_distribution_plot <- ggplot(rt_plot_df, aes(x = RT_num)) +
+  geom_histogram(bins = 30, fill = "#4C78A8", color = "white") +
+  facet_wrap(~Condition, scales = "free_y") +
+  labs(
+    title = "RT Distribution by Cue Reward Condition",
+    x = "Reaction Time (RT)",
+    y = "Count"
+  ) +
+  coord_cartesian(xlim = c(0, 2000)) +
+  theme_minimal()
+
+# print(rt_distribution_plot)
+
+fig_dir <- file.path("analysis", "fig")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+fig_file <- file.path(
+  fig_dir,
+  paste0("rt_distribution_by_condition_", format(Sys.Date(), "%Y-%m-%d"), ".png")
+)
+ggsave(filename = fig_file, plot = rt_distribution_plot, width = 12, height = 8, dpi = 300)
+
+rt_density_plot <- ggplot(rt_plot_df, aes(x = RT_num)) +
+  geom_density(fill = "#72B7B2", alpha = 0.5, color = "#1F4E79", linewidth = 0.6) +
+  facet_wrap(~Condition, scales = "free_y") +
+  labs(
+    title = "RT Density by Cue Reward Condition",
+    x = "Reaction Time (RT)",
+    y = "Density"
+  ) +
+  # coord_cartesian(xlim = c(0, 2000)) +
+  theme_minimal()
+
+# print(rt_density_plot)
+
+density_fig_file <- file.path(
+  fig_dir,
+  paste0("rt_density_by_condition_", format(Sys.Date(), "%Y-%m-%d"), ".png")
+)
+ggsave(filename = density_fig_file, plot = rt_density_plot, width = 12, height = 8, dpi = 300)
