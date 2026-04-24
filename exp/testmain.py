@@ -209,6 +209,7 @@ def _build_trial_row(
     session,
     block,
     trial_index,
+    trial_condition_values,
     warm_up=0,
     trial_start_jitter_time_ms=0,
     trial_wall_clock_str="",
@@ -238,7 +239,9 @@ def _build_trial_row(
     pos_with_selected_color = next((p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == selected_color), None) if selected_color is not None else None
     exp_reward = (position_to_reward[pos_with_selected_color] or 0) if (has_response and pos_with_selected_color is not None) else 0
 
-    cond = f"{len(colors_shown)}cue"
+    reward_condition_values = tuple(sorted(trial_condition_values))
+    cond = "{" + ",".join(str(v) for v in reward_condition_values) + "}"
+    num_cues = len(reward_condition_values)
 
     return {
         "ExperimentName": EXPERIMENT_NAME,
@@ -250,7 +253,7 @@ def _build_trial_row(
         "Trial": trial_index + 1,
         "WarmUpTrial": warm_up,
         "CueCondition": cond,
-        "NumCues": len(colors_shown),
+        "NumCues": num_cues,
         "TrialStartJitterTime": round(trial_start_jitter_time_ms, 2),  # ms
         "CueSOA": 0,
         "Cues": "".join(str(c) for c in colors),
@@ -294,8 +297,8 @@ DAT_COLUMN_DESCRIPTIONS = {
     "Block": "Block number (1-based) within the session.",
     "Trial": "Trial index within the session (1-based, increments across warmup and main).",
     "WarmUpTrial": "1 if warmup trial, 0 if main trial.",
-    "CueCondition": "Label for number of cues shown this trial (e.g. 1cue, 4cue).",
-    "NumCues": "Count of cued stimulus locations this trial.",
+    "CueCondition": "Reward-set condition assigned during trial generation from reward_value_set (one of {1},{2},{3},{4},{1,2},{1,3},{1,4},{2,3},{2,4},{3,4}).",
+    "NumCues": "Number of reward digits in the assigned reward-set condition for this trial (1 or 2).",
     "TrialStartJitterTime": "Duration of fixation before stimulus onset (ms); actual drawn jitter or DEBUG substitute.",
     "CueSOA": "Cue–target stimulus onset asynchrony (ms); 0 here (no separate cue–mask SOA in this script).",
     "Cues": "Four digits: color ID 1–4 at each spatial slot 0–3; 0 = no stimulus at that slot.",
@@ -584,7 +587,11 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
     reward values are fixed by the condition.
     """
     def make_trial(position_to_color_id: dict, position_to_reward: dict) -> dict:
-        return {"position_to_color_id": position_to_color_id, "position_to_reward": position_to_reward}
+        return {
+            "position_to_color_id": position_to_color_id,
+            "position_to_reward": position_to_reward,
+            "reward_condition_values": tuple(sorted(reward_values)),
+        }
 
     n_positions = NUM_POSITIONS
     all_color_ids = list(range(1, n_positions + 1))
@@ -946,6 +953,7 @@ for trial_in_session in range(total_trials):
         session=session_idx,
         block=trial_data["block"],
         trial_index=trial_index,
+        trial_condition_values=trial_data["reward_condition_values"],
         warm_up=trial_data["warm_up"],
         trial_start_jitter_time_ms=trial_start_jitter_time_ms,
         trial_wall_clock_str=trial_wall_clock_str,
