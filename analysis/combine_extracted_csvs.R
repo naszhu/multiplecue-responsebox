@@ -228,6 +228,6 @@ rt_density_group_plot <- ggplot(
 
 cumulative_density_fig_file <- file.path(
   fig_dir,
-  paste0("rt_density_cumulative_groups_by_condition_3", format(Sys.Date(), "%Y-%m-%d"), ".png")
+  paste0("rt_density_cumulative_groups_by_condition_3third", format(Sys.Date(), "%Y-%m-%d"), ".png")
 )
 ggsave(filename = cumulative_density_fig_file, plot = rt_density_group_plot, width = 13, height = 9, dpi = 300)
