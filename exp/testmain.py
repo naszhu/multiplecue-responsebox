@@ -13,6 +13,8 @@ Display flow (win.flip locations):
 import math
 import random
 import time
+import json
+import csv
 from itertools import combinations, permutations
 from pathlib import Path
 from datetime import datetime
@@ -166,8 +168,10 @@ COLOR_MAP_LAYOUT = session_dlg.data[4]  # "horizontal" or "keyboard"
 MONITOR_NAME = str(session_dlg.data[5]).strip() or MONITOR_NAME
 
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
-_out_path = (_out_dir / f"CCRP_subj{PARTICIPANT}_ses{SESSION}.dat").resolve()
-if _out_path.exists():
+_base_stem = f"CCRP_subj{PARTICIPANT}_ses{SESSION}"
+_out_trials_path = (_out_dir / f"{_base_stem}_trials.csv").resolve()
+_out_metadata_path = (_out_dir / f"{_base_stem}_metadata.json").resolve()
+if _out_trials_path.exists() or _out_metadata_path.exists():
     _dup_msg = (
         f"Participant data already exists (participant {PARTICIPANT}, session {SESSION}).\n"
         "Delete existing data or try another participant number."
@@ -205,6 +209,7 @@ def _build_trial_row(
     session,
     block,
     trial_index,
+    trial_condition_values,
     warm_up=0,
     trial_start_jitter_time_ms=0,
     trial_wall_clock_str="",
@@ -234,7 +239,9 @@ def _build_trial_row(
     pos_with_selected_color = next((p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == selected_color), None) if selected_color is not None else None
     exp_reward = (position_to_reward[pos_with_selected_color] or 0) if (has_response and pos_with_selected_color is not None) else 0
 
-    cond = f"{len(colors_shown)}cue"
+    reward_condition_values = tuple(sorted(trial_condition_values))
+    cond = "{" + ",".join(str(v) for v in reward_condition_values) + "}"
+    num_cues = len(reward_condition_values)
 
     return {
         "ExperimentName": EXPERIMENT_NAME,
@@ -246,7 +253,7 @@ def _build_trial_row(
         "Trial": trial_index + 1,
         "WarmUpTrial": warm_up,
         "CueCondition": cond,
-        "NumCues": len(colors_shown),
+        "NumCues": num_cues,
         "TrialStartJitterTime": round(trial_start_jitter_time_ms, 2),  # ms
         "CueSOA": 0,
         "Cues": "".join(str(c) for c in colors),
@@ -290,8 +297,8 @@ DAT_COLUMN_DESCRIPTIONS = {
     "Block": "Block number (1-based) within the session.",
     "Trial": "Trial index within the session (1-based, increments across warmup and main).",
     "WarmUpTrial": "1 if warmup trial, 0 if main trial.",
-    "CueCondition": "Label for number of cues shown this trial (e.g. 1cue, 4cue).",
-    "NumCues": "Count of cued stimulus locations this trial.",
+    "CueCondition": "Reward-set condition assigned during trial generation from reward_value_set (one of {1},{2},{3},{4},{1,2},{1,3},{1,4},{2,3},{2,4},{3,4}).",
+    "NumCues": "Number of reward digits in the assigned reward-set condition for this trial (1 or 2).",
     "TrialStartJitterTime": "Duration of fixation before stimulus onset (ms); actual drawn jitter or DEBUG substitute.",
     "CueSOA": "Cue–target stimulus onset asynchrony (ms); 0 here (no separate cue–mask SOA in this script).",
     "Cues": "Four digits: color ID 1–4 at each spatial slot 0–3; 0 = no stimulus at that slot.",
@@ -321,9 +328,8 @@ DAT_COLUMN_DESCRIPTIONS = {
 }
 
 
-def _write_psychopy_style_dat_header(
+def _build_metadata(
     *,
-    fp,
     exp_start_time_str: str,
     n_blocks: int,
     n_trials_total: int,
@@ -331,8 +337,8 @@ def _write_psychopy_style_dat_header(
     total_warmup: int,
     cfg: dict,
     dat_columns: list[str],
-) -> None:
-    """Write .dat preamble: trial settings, run metadata, column glossary, then caller adds TSV header row."""
+) -> dict:
+    """Build metadata payload for sidecar JSON file."""
     try:
         import psychopy  # local import keeps startup simple
         psychopy_version = getattr(psychopy, "__version__", "unknown")
@@ -350,98 +356,68 @@ def _write_psychopy_style_dat_header(
         else "Jitter sampled as min(offset + Exp(mean), max) per trial."
     )
 
-    trial_lines = [
-        "=== Trial timing and design ===",
-        f"Cue SOA (ms): 0 (cues on screen with response window; no separate cue–mask SOA in this script).",
-        f"Trial start jitter — offset (s): {TRIAL_START_JITTER_OFFSET}",
-        f"Trial start jitter — exponential mean (s): {TRIAL_START_JITTER_MEAN}",
-        f"Trial start jitter — max cap (s): {TRIAL_START_JITTER_MAX}",
-        f"Trial start jitter — note: {jitter_note}",
-        f"Response key wait max (s): {MAX_WAIT_TIME}",
-        f"Late response threshold (s): {RESPONSE_DEADLINE}",
-        f"Feedback duration (s): {FEEDBACK_WAIT_TIME} (DEBUG short_feedback may shorten).",
-        f"Warmup trials — first block: {FIRST_WARMUP_TRIALS}",
-        f"Warmup trials — other blocks: {OTHER_WARMUP_TRIALS}",
-        f"Blocks: {n_blocks}",
-        f"Main trials per block: {n_trials_per_block}",
-        f"Total warmup trials: {total_warmup}",
-        f"Total trials (warmup + main): {n_trials_total}",
-        f"Single stimulus at center (session design): {cfg.get('center', False)}",
-        f"Color-key legend on screen (sessions 1–3 only): {SESSION in (1, 2, 3)}",
-        f"Reward value conditions (reward_value_set): {reward_set}",
-        f"Number of reward conditions: {n_reward_conds}",
-        f"Main trials per reward condition per block (balanced): {reps_per_condition}",
-        f"Color-to-key mapping (pos 0–3 = Red/Green/Blue/Yellow): {[k.upper() for k in COLOR_KEYS]}",
-        "Per-trial logging: TrialWallClockTime = local time when row is written; SessionElapsedSec = monotonic seconds since pre-loop session start.",
-        "",
-    ]
-
-    header_lines = [
-        "=== Run and display metadata ===",
-        f"PsychoPy version: {psychopy_version}",
-        f"Experimental Program: {program_name}",
-        f"Experiment Name: {EXPERIMENT_NAME}",
-        f"Experiment Number: {EXPERIMENT_NUMBER}",
-        f"Exp start time: {exp_start_time_str}",
-        f"DEBUG_CONFIG enabled: {debug_on}",
-        "",
-        f"Subject: {PARTICIPANT}",
-        f"Age: {AGE}",
-        f"Gender: {GENDER}",
-        "",
-        f"Practice: {'Y' if SESSION <= 5 else 'N'}",
-        f"Session: {SESSION}",
-        f"Number of Blocks: {n_blocks}",
-        f"Total number of trials: {n_trials_total}",
-        "",
-        f"Reward Money Factor: {REWARD_MONEY_FACTOR}",
-        "",
-        f"Full screen: {'Y' if DEBUG_CONFIG.get('full_screen', True) else 'N'}",
-        f"Response keys: {[k.upper() for k in response_keys]}",
-        f"Response deadline: {RESPONSE_DEADLINE}",
-        "",
-        "Startup display check: after Window open, compare actual win.size to WIN_SIZE_PIX and "
-        f"win.getActualFrameRate() to {EXPECTED_REFRESH_HZ} Hz (±{REFRESH_RATE_TOLERANCE_HZ} Hz). "
-        "On mismatch, a full-screen message shows expected vs actual; C continues, ESC exits.",
-        f"Fixed refresh rate (expected, Hz): {EXPECTED_REFRESH_HZ}",
-        f"Measured refresh rate (Hz): {MEASURED_REFRESH_RATE:.6g}",
-        f"Expected resolution (px): {list(WIN_SIZE_PIX)}",
-        f"Actual window size (px): {list(ACTUAL_WIN_SIZE_PIX)}",
-        f"Display check passed spec: {'Y' if DISPLAY_CHECK_SPEC_OK else 'N'}",
-        f"Continued after mismatch warning: {'Y' if DISPLAY_CHECK_MISMATCH_CONTINUED else 'N'}",
-        "",
-        f"Monitor name: {MONITOR_NAME}",
-        f"Monitor set size: {list(WIN_SIZE_PIX)} pixels",
-        f"Monitor width: {MONITOR_WIDTH_CM} cm",
-        f"Monitor distance: {MONITOR_DISTANCE_CM} cm",
-        "",
-        f"Background color: {BG_COLOR}",
-        f"Cue background color: {CUE_BG_COLOR}",
-        f"Cue text color: {CUE_TEXT_COLOR}",
-        f"Stimulus opacity: {STIMULUS_OPACITY}",
-        f"Stimulus target RGB color values: {STIMULUS_TARGET_COLORS_RGB}",
-        "",
-        "=== Column definitions (tab-separated data below) ===",
-    ]
-    for col in dat_columns:
-        desc = DAT_COLUMN_DESCRIPTIONS.get(col, "No description defined.")
-        header_lines.append(f"{col}: {desc}")
-    header_lines.extend(["", ""])
-
-    fp.write("\n".join(trial_lines + header_lines))
-
-
-def _sanitize_dat_value(v):
-    if v is None:
-        return ""
-    if isinstance(v, bool):
-        return "True" if v else "False"
-    s = str(v)
-    return s.replace("\t", " ").replace("\n", " ").replace("\r", " ")
-
-
-def _append_dat_row(*, fp, columns: list[str], row: dict) -> None:
-    fp.write("\t".join(_sanitize_dat_value(row.get(c, "")) for c in columns) + "\n")
+    return {
+        "trial_timing_and_design": {
+            "cue_soa_ms": 0,
+            "trial_start_jitter_offset_s": TRIAL_START_JITTER_OFFSET,
+            "trial_start_jitter_exponential_mean_s": TRIAL_START_JITTER_MEAN,
+            "trial_start_jitter_max_cap_s": TRIAL_START_JITTER_MAX,
+            "trial_start_jitter_note": jitter_note,
+            "response_key_wait_max_s": MAX_WAIT_TIME,
+            "late_response_threshold_s": RESPONSE_DEADLINE,
+            "feedback_duration_s": FEEDBACK_WAIT_TIME,
+            "warmup_trials_first_block": FIRST_WARMUP_TRIALS,
+            "warmup_trials_other_blocks": OTHER_WARMUP_TRIALS,
+            "blocks": n_blocks,
+            "main_trials_per_block": n_trials_per_block,
+            "total_warmup_trials": total_warmup,
+            "total_trials_warmup_plus_main": n_trials_total,
+            "single_stimulus_at_center": bool(cfg.get("center", False)),
+            "color_key_legend_on_screen_sessions_1_to_3": SESSION in (1, 2, 3),
+            "reward_value_conditions": reward_set,
+            "number_of_reward_conditions": n_reward_conds,
+            "main_trials_per_reward_condition_per_block_balanced": reps_per_condition,
+            "color_to_key_mapping_red_green_blue_yellow": [k.upper() for k in COLOR_KEYS],
+            "per_trial_logging_note": "TrialWallClockTime is local wall time; SessionElapsedSec is monotonic elapsed seconds since pre-loop session start.",
+        },
+        "run_and_display_metadata": {
+            "psychopy_version": psychopy_version,
+            "experimental_program": program_name,
+            "experiment_name": EXPERIMENT_NAME,
+            "experiment_number": EXPERIMENT_NUMBER,
+            "exp_start_time": exp_start_time_str,
+            "debug_config_enabled": debug_on,
+            "subject": PARTICIPANT,
+            "age": AGE,
+            "gender": GENDER,
+            "practice": "Y" if SESSION <= 5 else "N",
+            "session": SESSION,
+            "number_of_blocks": n_blocks,
+            "total_number_of_trials": n_trials_total,
+            "reward_money_factor": REWARD_MONEY_FACTOR,
+            "full_screen": "Y" if DEBUG_CONFIG.get("full_screen", True) else "N",
+            "response_keys": [k.upper() for k in response_keys],
+            "response_deadline": RESPONSE_DEADLINE,
+            "startup_display_check_description": "After Window open, compare actual win.size to WIN_SIZE_PIX and win.getActualFrameRate() to expected Hz; on mismatch, C continues and ESC exits.",
+            "fixed_refresh_rate_expected_hz": EXPECTED_REFRESH_HZ,
+            "measured_refresh_rate_hz": MEASURED_REFRESH_RATE,
+            "expected_resolution_px": list(WIN_SIZE_PIX),
+            "actual_window_size_px": list(ACTUAL_WIN_SIZE_PIX),
+            "display_check_passed_spec": "Y" if DISPLAY_CHECK_SPEC_OK else "N",
+            "continued_after_mismatch_warning": "Y" if DISPLAY_CHECK_MISMATCH_CONTINUED else "N",
+            "monitor_name": MONITOR_NAME,
+            "monitor_set_size_pixels": list(WIN_SIZE_PIX),
+            "monitor_width_cm": MONITOR_WIDTH_CM,
+            "monitor_distance_cm": MONITOR_DISTANCE_CM,
+            "background_color": BG_COLOR,
+            "cue_background_color": CUE_BG_COLOR,
+            "cue_text_color": CUE_TEXT_COLOR,
+            "stimulus_opacity": STIMULUS_OPACITY,
+            "stimulus_target_rgb_color_values": STIMULUS_TARGET_COLORS_RGB,
+        },
+        "column_order": dat_columns,
+        "column_definitions": {col: DAT_COLUMN_DESCRIPTIONS.get(col, "No description defined.") for col in dat_columns},
+    }
 
 
 def _run_startup_display_check(win) -> tuple[float, tuple[int, int], bool, bool]:
@@ -603,6 +579,8 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
     """
     Enumerate all trial variants for a reward-value condition.
 
+    reward_values comes from the cfg["reward_value_set"], example: (1, 2), (1, 3), (1, 4), (2, 3), (2, 4), (3, 4)
+
     Output format:
       {"position_to_color_id": {0..3: color_id 1–4 or None},
        "position_to_reward": {0..3: reward (1–4) or None}}
@@ -611,7 +589,11 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
     reward values are fixed by the condition.
     """
     def make_trial(position_to_color_id: dict, position_to_reward: dict) -> dict:
-        return {"position_to_color_id": position_to_color_id, "position_to_reward": position_to_reward}
+        return {
+            "position_to_color_id": position_to_color_id,
+            "position_to_reward": position_to_reward,
+            "reward_condition_values": tuple(reward_values), #gives example: (1, 2)
+        }
 
     n_positions = NUM_POSITIONS
     all_color_ids = list(range(1, n_positions + 1))
@@ -679,6 +661,11 @@ def _build_trials(cfg: dict) -> list:
 
         # Main block
         main_block = _make_block()
+        # {
+        # "position_to_color_id": {0: 3, 1: 1, 2: 4, 3: 2},
+        # "position_to_reward": {0: None, 1: 1, 2: None, 3: 4},
+        # "reward_condition_values": (1, 4)
+        # }
 
         for i, t in enumerate(warmup_trials):
             trials.append({**t, "warm_up": 1, "block": block_number, "trial_in_block": i + 1})
@@ -687,6 +674,16 @@ def _build_trials(cfg: dict) -> list:
     return trials
 
 trial_data_list = _build_trials(cfg)
+
+# trial_data_list[i] = {
+#   "position_to_color_id": {...},
+#   "position_to_reward": {...},
+#   "reward_condition_values": (1, 2),   # or (1,), (4,), etc.
+#   "warm_up": 1 or 0,
+#   "block": 1-based block number,
+#   "trial_in_block": 1-based index within that block (including warmup)
+# }
+
 
 # Fixation point (match paradigm: visual.Circle, size=FixationSize, FixationPointColor)
 fixation = visual.Circle(
@@ -765,12 +762,14 @@ cum_reward = 0.0
 trial_index = 0
 out_dir = _out_dir
 out_dir.mkdir(parents=True, exist_ok=True)
-out_path = _out_path
-print(f"Data will be saved to: {out_path}")
+out_trials_path = _out_trials_path
+out_metadata_path = _out_metadata_path
+print(f"Trial data will be saved to: {out_trials_path}")
+print(f"Metadata will be saved to: {out_metadata_path}")
 first_trial_save = True  # Write header on first trial
 completed_normally = True
 exp_start_time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-dat_columns = None
+csv_columns = None
 session_start_perf = time.perf_counter()
 
 # =============================================================================
@@ -971,28 +970,31 @@ for trial_in_session in range(total_trials):
         session=session_idx,
         block=trial_data["block"],
         trial_index=trial_index,
+        trial_condition_values=trial_data["reward_condition_values"],
         warm_up=trial_data["warm_up"],
         trial_start_jitter_time_ms=trial_start_jitter_time_ms,
         trial_wall_clock_str=trial_wall_clock_str,
         session_elapsed_sec=session_elapsed_sec,
     )
 
-    if dat_columns is None:
-        dat_columns = list(row.keys())
-    with open(out_path, "w" if first_trial_save else "a", encoding="utf-8", newline="\n") as fp:
+    if csv_columns is None:
+        csv_columns = list(row.keys())
+    with open(out_trials_path, "w" if first_trial_save else "a", encoding="utf-8", newline="") as fp:
+        writer = csv.DictWriter(fp, fieldnames=csv_columns)
         if first_trial_save:
-            _write_psychopy_style_dat_header(
-                fp=fp,
+            writer.writeheader()
+            metadata = _build_metadata(
                 exp_start_time_str=exp_start_time_str,
                 n_blocks=n_blocks,
                 n_trials_total=total_trials,
                 n_trials_per_block=n_trials_per_block,
                 total_warmup=total_warmup,
                 cfg=cfg,
-                dat_columns=dat_columns,
+                dat_columns=csv_columns,
             )
-            fp.write("\t".join(dat_columns) + "\n")
-        _append_dat_row(fp=fp, columns=dat_columns, row=row)
+            with open(out_metadata_path, "w", encoding="utf-8") as meta_fp:
+                json.dump(metadata, meta_fp, indent=2, ensure_ascii=False)
+        writer.writerow(row)
     first_trial_save = False
 
     prev_block = current_block
