@@ -365,10 +365,11 @@ def _build_metadata(
 
     program_name = Path(__file__).name
     reward_conditions = cfg.get("reward_conditions", [])
-    reward_set = [list(cond["values"]) for cond in reward_conditions]
     reward_labels = [cond["label"] for cond in reward_conditions]
     n_reward_conds = len(reward_conditions)
     reps_per_condition = (n_trials_per_block // n_reward_conds) if n_reward_conds else 0
+    color_names = ["Red", "Green", "Blue", "Yellow"]
+    location_names = ["upper right", "upper left", "lower left", "lower right"]
     debug_on = bool(DEBUG_CONFIG.get("enabled"))
     jitter_note = (
         f"DEBUG: fixation/jitter replaced by {DEBUG_CONFIG.get('trial_duration', 0) * 1000:.4f} ms when enabled."
@@ -394,11 +395,19 @@ def _build_metadata(
             "total_trials_warmup_plus_main": n_trials_total,
             "single_stimulus_at_center": bool(cfg.get("center", False)),
             "color_key_legend_on_screen_sessions_1_to_3": SESSION in (1, 2, 3),
-            "reward_value_conditions": reward_set,
             "cue_condition_labels": reward_labels,
             "number_of_reward_conditions": n_reward_conds,
             "main_trials_per_reward_condition_per_block_balanced": reps_per_condition,
-            "color_to_key_mapping_red_green_blue_yellow": [k.upper() for k in COLOR_KEYS],
+            "color_id_mapping_for_cues": {str(i + 1): color_names[i] for i in range(NUM_POSITIONS)},
+            "color_to_key_mapping": {color_names[i]: COLOR_KEYS[i].upper() for i in range(NUM_POSITIONS)},
+            "location_id_mapping": {
+                str(i + 1): {
+                    "screen_location": location_names[i],
+                    "position_deg_x_y": [round(POSITIONS_DEG[i][0], 3), round(POSITIONS_DEG[i][1], 3)],
+                }
+                for i in range(NUM_POSITIONS)
+            },
+            "location_id_mapping_note": "Location ids are 1-based positions in Cues, CueValues, CueRanks, RespLoc, and PointTargetResponse.",
             "per_trial_logging_note": "TrialWallClockTime is local wall time; SessionElapsedSec is monotonic elapsed seconds since pre-loop session start.",
         },
         "run_and_display_metadata": {
