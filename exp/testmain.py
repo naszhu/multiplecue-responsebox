@@ -35,16 +35,33 @@ DEBUG_CONFIG = {
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
 MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experimental config.
+# Explicit cue-condition labels used in output. The trial generator chooses from
+# these configured conditions and writes the configured label directly.
+REWARD_CONDITIONS = [
+    {"values": (1,), "label": "(1)"},
+    {"values": (2,), "label": "(2)"},
+    {"values": (3,), "label": "(3)"},
+    {"values": (4,), "label": "(4)"},
+    {"values": (2, 1), "label": "(2,1)"},
+    {"values": (3, 1), "label": "(3,1)"},
+    {"values": (4, 1), "label": "(4,1)"},
+    {"values": (3, 2), "label": "(3,2)"},
+    {"values": (4, 2), "label": "(4,2)"},
+    {"values": (4, 3), "label": "(4,3)"},
+]
+SINGLE_REWARD_CONDITIONS = REWARD_CONDITIONS[:4]
+ALL_REWARD_CONDITIONS = REWARD_CONDITIONS
+
 # Per-session config (index = session - 1). Session 6+ uses config index 5.
-# reward_value_set: which reward values (1–4) appear in trials. [1]=one pos has reward 1; [1,2]=two pos have rewards 1,2.
+# reward_conditions: which reward values (1–4) appear in trials and the CueCondition label to write.
 # Color is always independent from reward value (each position gets a random color assignment).
 SESSION_CONFIG = [
-    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": True, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": False, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": False},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 8, "n_per_block": 50, "center": False, "color_map": False},
+    {"reward_conditions": SINGLE_REWARD_CONDITIONS, "n_blocks": 10, "n_per_block": 20, "center": True, "color_map": True},
+    {"reward_conditions": SINGLE_REWARD_CONDITIONS, "n_blocks": 10, "n_per_block": 20, "center": False, "color_map": True},
+    {"reward_conditions": ALL_REWARD_CONDITIONS, "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": True},
+    {"reward_conditions": ALL_REWARD_CONDITIONS, "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": False},
+    {"reward_conditions": ALL_REWARD_CONDITIONS, "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
+    {"reward_conditions": ALL_REWARD_CONDITIONS, "n_blocks": 8, "n_per_block": 50, "center": False, "color_map": False},
 ]
 MAX_WAIT_TIME = 2.0
 # Trial start jitter (match paradigm: TrialStartJitterOffsetTime, MeanTime, MaxTime)
@@ -209,7 +226,8 @@ def _build_trial_row(
     session,
     block,
     trial_index,
-    trial_condition_values,
+    trial_condition_label,
+    num_cues,
     warm_up=0,
     trial_start_jitter_time_ms=0,
     trial_wall_clock_str="",
@@ -219,14 +237,13 @@ def _build_trial_row(
     # Color layout: 4-digit strings (position 0..3). Rewards from position_to_reward.
     colors = [position_to_color_id[i] or 0 for i in range(NUM_POSITIONS)]
     reward_vals = [position_to_reward[i] or 0 for i in range(NUM_POSITIONS)]
-    sorted_colors = sorted(colors)
-    color_ranks = [NUM_POSITIONS - sorted_colors.index(colors[i]) for i in range(NUM_POSITIONS)]
+    sorted_reward_values = sorted((value for value in reward_vals if value), reverse=True)
+    reward_rank_by_value = {value: rank + 1 for rank, value in enumerate(sorted_reward_values)}
+    reward_ranks = [reward_rank_by_value.get(value, 4) if value else 4 for value in reward_vals]
 
     # Response
     sel = selected_position
     has_response = sel is not None
-    resp_loc = "".join("1" if i == sel else "0" for i in range(NUM_POSITIONS)) if has_response else "0000"
-    point_target = (sel + 1) if has_response else 0
     sel_color = position_to_color_id[sel] if has_response else None
 
     rt_sec = (response_time - cue_time) if (keys and pressed_key != "escape") else (MAX_WAIT_TIME if not keys else 0.0)
@@ -234,14 +251,15 @@ def _build_trial_row(
     intr = 1 if (has_response and sel_color is None) else 0
     # ACC: correct = selected the circle with highest reward (color-to-key rule)
     acc = 1 if actual_reward == max_reward and max_reward > 0 else 0
-    color_exp = sel_color if (has_response and sel_color) else 0
-    color_rank_resp = color_ranks[sel] if (has_response and sel_color) else 0
-    pos_with_selected_color = next((p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == selected_color), None) if selected_color is not None else None
-    exp_reward = (position_to_reward[pos_with_selected_color] or 0) if (has_response and pos_with_selected_color is not None) else 0
-
-    reward_condition_values = tuple(sorted(trial_condition_values))
-    cond = "{" + ",".join(str(v) for v in reward_condition_values) + "}"
-    num_cues = len(reward_condition_values)
+    chosen_location_idx = next(
+        (i for i in range(NUM_POSITIONS) if position_to_color_id.get(i) == selected_color),
+        None,
+    ) if selected_color is not None else None
+    resp_loc = (chosen_location_idx + 1) if chosen_location_idx is not None else 0
+    point_target = "".join("1" if i == chosen_location_idx else "0" for i in range(NUM_POSITIONS)) if chosen_location_idx is not None else "0000"
+    cue_response_exp_value = reward_vals[chosen_location_idx] if chosen_location_idx is not None else 0
+    cue_rank_response = reward_ranks[chosen_location_idx] if chosen_location_idx is not None else 0
+    exp_reward = max((value for value in reward_vals if value), default=0)
 
     return {
         "ExperimentName": EXPERIMENT_NAME,
@@ -252,28 +270,28 @@ def _build_trial_row(
         "Block": block,
         "Trial": trial_index + 1,
         "WarmUpTrial": warm_up,
-        "CueCondition": cond,
+        "CueCondition": trial_condition_label,
         "NumCues": num_cues,
         "TrialStartJitterTime": round(trial_start_jitter_time_ms, 2),  # ms
         "CueSOA": 0,
         "Cues": "".join(str(c) for c in colors),
         "CueValues": "".join(str(v) for v in reward_vals),
-        "CueRanks": "".join(str(r) for r in color_ranks),
+        "CueRanks": "".join(str(r) for r in reward_ranks),
         "Response": pressed_key or "timeout",
 
-        # RespLoc: 4-digit one-hot of selected color (CCRP: pos0=Red, pos1=Green, pos2=Blue, pos3=Yellow)
+        # RespLoc: location id of the participant's chosen cue.
         "RespLoc": resp_loc,
-        # PointTargetResponse: 1=Red, 2=Green, 3=Blue, 4=Yellow, 0=timeout
-        "PointTargetResponse": point_target, 
-        
+        # PointTargetResponse: 4-digit one-hot vector of chosen cue location.
+        "PointTargetResponse": point_target,
+
         "RT": round(rt_sec * 1000, 2),  # ms
         "LateResponse": late, # 1 - late response, 0 - on time response
         "ACC": acc, # 1 - correct response, 0 - incorrect response
         "INTR": intr, # 1 - intrusion error, 0 - no intrusion error, if respond to the non-cued position
         "CueResponseValue": actual_reward, # the value of the cue at the selected position
-        "CueResponseExpValue": color_exp, # the color at the selected position
-        "CueRankResponse": color_rank_resp, # the rank of the color at the selected position
-        "ExpectedReward": exp_reward, # the expected reward for the trial
+        "CueResponseExpValue": cue_response_exp_value, # expected reward value at chosen location
+        "CueRankResponse": cue_rank_response, # reward-value rank at chosen location
+        "ExpectedReward": exp_reward, # the highest available reward for the trial
         "Reward": actual_reward, # the actual reward for the trial
         "MaxReward": max_reward, # the maximum reward for the trial
         "CumReward": cum_reward, # the cumulative reward for the session
@@ -297,24 +315,24 @@ DAT_COLUMN_DESCRIPTIONS = {
     "Block": "Block number (1-based) within the session.",
     "Trial": "Trial index within the session (1-based, increments across warmup and main).",
     "WarmUpTrial": "1 if warmup trial, 0 if main trial.",
-    "CueCondition": "Reward-set condition assigned during trial generation from reward_value_set (one of {1},{2},{3},{4},{1,2},{1,3},{1,4},{2,3},{2,4},{3,4}).",
-    "NumCues": "Number of reward digits in the assigned reward-set condition for this trial (1 or 2).",
+    "CueCondition": "** Label for reward-value combination among non-zero CueValues in this trial. Allowed conditions: (1), (2), (3), (4), (2,1), (3,1), (4,1), (3,2), (4,2), (4,3). Order is descending reward value and ignores location order.",
+    "NumCues": "Count of cued stimulus locations this trial.",
     "TrialStartJitterTime": "Duration of fixation before stimulus onset (ms); actual drawn jitter or DEBUG substitute.",
     "CueSOA": "Cue–target stimulus onset asynchrony (ms); 0 here (no separate cue–mask SOA in this script).",
     "Cues": "Four digits: color ID 1–4 at each spatial slot 0–3; 0 = no stimulus at that slot.",
     "CueValues": "Four digits: reward digit at each slot; 0 = no reward at that slot.",
-    "CueRanks": "Four digits: within-trial rank from color IDs (larger color ID → larger rank digit).",
+    "CueRanks": "** Four digits: reward-value rank at each location; 1 = highest reward, 2 = second-highest reward when two cues are present, 4 = no reward at that location.",
     "Response": "Key pressed (lowercase) or timeout; escape not logged as a trial row.",
-    "RespLoc": "Four-digit one-hot: 1 at the index of the pressed response key (0–3), else 0; 0000 if no response.",
-    "PointTargetResponse": "1–4 = Red/Green/Blue/Yellow by response-key index when a key was pressed; 0 if timeout.",
+    "RespLoc": "** Location id (1-4) of where the participant's chosen cue is on screen; 0 if no valid chosen location.",
+    "PointTargetResponse": "** Four-digit one-hot vector from location 1 to 4: 1 marks where the participant's chosen cue is, 0 marks all other locations; 0000 if no valid chosen location.",
     "RT": "Reaction time (ms) from stimulus onset to keypress; timeout uses max wait; DEBUG uses artificial RT.",
     "LateResponse": "True if RT (seconds) exceeded RESPONSE_DEADLINE; False otherwise.",
     "ACC": "1 if obtained reward equals max possible reward on that trial and max > 0; else 0.",
     "INTR": "1 if participant responded with a key whose mapped color was absent on screen; else 0.",
     "CueResponseValue": "Reward points obtained from the chosen color’s on-screen location (0 if wrong/absent).",
-    "CueResponseExpValue": "Color ID (1–4) at the spatial slot tied to the pressed key; 0 if invalid.",
-    "CueRankResponse": "CueRanks digit at the pressed-key slot when valid; 0 if invalid.",
-    "ExpectedReward": "Reward digit at the screen location that shows the pressed color (0 if that color absent).",
+    "CueResponseExpValue": "** Expected reward value at location chosen.",
+    "CueRankResponse": "** Rank of value at location chosen; 1 = highest reward, 2 = second-highest reward when two cues are present, 4 = chosen location has no reward, 0 = no valid chosen location.",
+    "ExpectedReward": "** Highest possible reward in this trial, computed as max non-zero digit in CueValues (0 if no non-zero CueValues).",
     "Reward": "Same as obtained points for this trial (CueResponseValue).",
     "MaxReward": "Maximum reward digit among cued locations this trial.",
     "CumReward": "Cumulative monetary-style score (points × REWARD_MONEY_FACTOR), running total.",
@@ -346,8 +364,10 @@ def _build_metadata(
         psychopy_version = "unknown"
 
     program_name = Path(__file__).name
-    reward_set = cfg.get("reward_value_set", [])
-    n_reward_conds = len(reward_set)
+    reward_conditions = cfg.get("reward_conditions", [])
+    reward_set = [list(cond["values"]) for cond in reward_conditions]
+    reward_labels = [cond["label"] for cond in reward_conditions]
+    n_reward_conds = len(reward_conditions)
     reps_per_condition = (n_trials_per_block // n_reward_conds) if n_reward_conds else 0
     debug_on = bool(DEBUG_CONFIG.get("enabled"))
     jitter_note = (
@@ -375,6 +395,7 @@ def _build_metadata(
             "single_stimulus_at_center": bool(cfg.get("center", False)),
             "color_key_legend_on_screen_sessions_1_to_3": SESSION in (1, 2, 3),
             "reward_value_conditions": reward_set,
+            "cue_condition_labels": reward_labels,
             "number_of_reward_conditions": n_reward_conds,
             "main_trials_per_reward_condition_per_block_balanced": reps_per_condition,
             "color_to_key_mapping_red_green_blue_yellow": [k.upper() for k in COLOR_KEYS],
@@ -575,11 +596,12 @@ total_warmup = n_warmup_first + (n_blocks - 1) * n_warmup_other
 total_trials = total_warmup + n_blocks * n_trials_per_block
 
 
-def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
+def _pool_for_reward_condition(reward_condition: dict, cfg: dict) -> list:
     """
     Enumerate all trial variants for a reward-value condition.
 
-    reward_values comes from the cfg["reward_value_set"], example: (1, 2), (1, 3), (1, 4), (2, 3), (2, 4), (3, 4)
+    reward_condition comes from cfg["reward_conditions"], including both reward values
+    and the configured CueCondition label to write.
 
     Output format:
       {"position_to_color_id": {0..3: color_id 1–4 or None},
@@ -588,11 +610,16 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
     Color is always independent from reward value. Each position gets a color (1–4);
     reward values are fixed by the condition.
     """
+    reward_values = tuple(reward_condition["values"])
+    condition_label = reward_condition["label"]
+
     def make_trial(position_to_color_id: dict, position_to_reward: dict) -> dict:
         return {
             "position_to_color_id": position_to_color_id,
             "position_to_reward": position_to_reward,
-            "reward_condition_values": tuple(reward_values), #gives example: (1, 2)
+            "reward_condition_values": reward_values,
+            "cue_condition": condition_label,
+            "num_cues": len(reward_values),
         }
 
     n_positions = NUM_POSITIONS
@@ -641,9 +668,9 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
 
 def _build_trials(cfg: dict) -> list:
     """Reward-value-balanced: each condition reps per block. Warm-up trials prepended per block (match paradigm)."""
-    reward_value_set, n_blocks, n_per_block = cfg["reward_value_set"], cfg["n_blocks"], cfg["n_per_block"]
-    reps_per_condition = n_per_block // len(reward_value_set) #how many trials each condition repeats
-    trial_pools = [_pool_for_reward_values(reward_values, cfg) for reward_values in reward_value_set]
+    reward_conditions, n_blocks, n_per_block = cfg["reward_conditions"], cfg["n_blocks"], cfg["n_per_block"]
+    reps_per_condition = n_per_block // len(reward_conditions) #how many trials each condition repeats
+    trial_pools = [_pool_for_reward_condition(reward_condition, cfg) for reward_condition in reward_conditions]
 
     def _make_block():
         block = [random.choice(pool) for pool in trial_pools for _ in range(reps_per_condition)]
@@ -664,7 +691,8 @@ def _build_trials(cfg: dict) -> list:
         # {
         # "position_to_color_id": {0: 3, 1: 1, 2: 4, 3: 2},
         # "position_to_reward": {0: None, 1: 1, 2: None, 3: 4},
-        # "reward_condition_values": (1, 4)
+        # "reward_condition_values": (4, 1),
+        # "cue_condition": "(4,1)"
         # }
 
         for i, t in enumerate(warmup_trials):
@@ -678,7 +706,8 @@ trial_data_list = _build_trials(cfg)
 # trial_data_list[i] = {
 #   "position_to_color_id": {...},
 #   "position_to_reward": {...},
-#   "reward_condition_values": (1, 2),   # or (1,), (4,), etc.
+#   "reward_condition_values": (2, 1),   # or (1,), (4,), etc.
+#   "cue_condition": "(2,1)",
 #   "warm_up": 1 or 0,
 #   "block": 1-based block number,
 #   "trial_in_block": 1-based index within that block (including warmup)
@@ -970,7 +999,8 @@ for trial_in_session in range(total_trials):
         session=session_idx,
         block=trial_data["block"],
         trial_index=trial_index,
-        trial_condition_values=trial_data["reward_condition_values"],
+        trial_condition_label=trial_data["cue_condition"],
+        num_cues=trial_data["num_cues"],
         warm_up=trial_data["warm_up"],
         trial_start_jitter_time_ms=trial_start_jitter_time_ms,
         trial_wall_clock_str=trial_wall_clock_str,
