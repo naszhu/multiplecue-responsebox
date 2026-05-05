@@ -31,6 +31,8 @@ DEBUG_CONFIG = {
     "short_feedback": True,
     "full_screen": True,  # Toggle fullscreen quickly during testing
 }
+# Default monitor shown in the initial session dialog.
+DEFAULT_MONITOR_NAME = "room1_a1"
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
@@ -131,7 +133,7 @@ COLOR_MAP_Y_DEG = -150 * STIM_FACTOR            # -6 deg
 
 # Display / monitor (match paradigm exactly)
 WIN_SIZE_PIX = (1920, 1080)
-MONITOR_NAME = "room1_a1"
+MONITOR_NAME = DEFAULT_MONITOR_NAME
 MONITOR_CHOICES = [f"room1_a{i}" for i in range(1, 11)]
 MONITOR_WIDTH_CM = 52
 MONITOR_DISTANCE_CM = 60
