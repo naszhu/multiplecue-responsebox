@@ -41,7 +41,7 @@ DEBUG_CONFIG = {
 # Default monitor shown in the initial session dialog.
 DEFAULT_MONITOR_NAME = "room1_a1"
 RESPONSE_DEVICE_KEYBOARD = "keyboard"
-RESPONSE_DEVICE_CEDRUS = "response box cedrus"
+RESPONSE_DEVICE_CEDRUS = "response_box_cedrus"
 DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_CEDRUS
 DEFAULT_COLOR_MAP_LAYOUT = "horizontal" if DEFAULT_RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS else "keyboard"
 CEDRUS_VID = 0x0403
@@ -242,6 +242,8 @@ def _build_trial_row(
     keys,
     cue_time,
     response_time,
+    rt_ms,
+    rt_computer_clock_ms,
     end_trial_time,
     actual_reward,
     max_reward,
@@ -269,7 +271,12 @@ def _build_trial_row(
     has_response = sel is not None
     sel_color = position_to_color_id[sel] if has_response else None
 
-    rt_sec = (response_time - cue_time) if (keys and pressed_key != "escape") else (MAX_WAIT_TIME if not keys else 0.0)
+    if rt_ms is None:
+        rt_ms = MAX_WAIT_TIME * 1000 if not keys else 0.0
+    if rt_computer_clock_ms is None:
+        rt_computer_clock_ms = rt_ms
+    rt_sec = rt_ms / 1000
+    rt_difference = rt_computer_clock_ms - rt_ms
     late = rt_sec > RESPONSE_DEADLINE
     intr = 1 if (has_response and sel_color is None) else 0
     # ACC: correct = selected the circle with highest reward (color-to-key rule)
@@ -308,7 +315,9 @@ def _build_trial_row(
         # PointTargetResponse: 4-digit one-hot vector of chosen cue location.
         "PointTargetResponse": point_target,
 
-        "RT": round(rt_sec * 1000, 2),  # ms
+        "RT": round(rt_ms, 2),  # ms
+        "RTComputerClock": round(rt_computer_clock_ms, 2),  # ms
+        "RTDifference": round(rt_difference, 2),  # RTComputerClock - RT
         "LateResponse": late, # 1 - late response, 0 - on time response
         "ACC": acc, # 1 - correct response, 0 - incorrect response
         "INTR": intr, # 1 - intrusion error, 0 - no intrusion error, if respond to the non-cued position
@@ -350,7 +359,9 @@ DAT_COLUMN_DESCRIPTIONS = {
     "Response": "Key pressed (lowercase) or timeout; escape not logged as a trial row.",
     "RespLoc": "** Location id (1-4) of where the participant's chosen cue is on screen; 0 if no valid chosen location.",
     "PointTargetResponse": "** Four-digit one-hot vector from location 1 to 4: 1 marks where the participant's chosen cue is, 0 marks all other locations; 0000 if no valid chosen location.",
-    "RT": "Reaction time (ms) from stimulus onset to keypress; timeout uses max wait; DEBUG uses artificial RT.",
+    "RT": "Reaction time (ms). For response box cedrus, this uses the Cedrus internal response timer; for keyboard, this matches RTComputerClock.",
+    "RTComputerClock": "Reaction time (ms) using the PsychoPy computer clock.",
+    "RTDifference": "RTComputerClock minus RT (ms). For keyboard this is 0; for response box cedrus this shows computer-clock minus Cedrus-clock RT.",
     "LateResponse": "True if RT (seconds) exceeded RESPONSE_DEADLINE; False otherwise.",
     "ACC": "1 if obtained reward equals max possible reward on that trial and max > 0; else 0.",
     "INTR": "1 if participant responded with a key whose mapped color was absent on screen; else 0.",
@@ -567,9 +578,10 @@ def _wait_for_cedrus_response(box, clock, max_wait):
             info = packet[1]
             button = str((info & 0xE0) >> 5 or 8)
             button_down = bool(info & 0x10)
+            cedrus_rt_ms = int.from_bytes(packet[2:6], "little")
 
             if button_down and button in CEDRUS_BUTTON_TO_COLOR_ID:
-                return (button, clock.getTime())
+                return (button, clock.getTime(), cedrus_rt_ms)
 
     return None
 
@@ -989,6 +1001,10 @@ for trial_in_session in range(total_trials):
         cedrus_box.reset_input_buffer()
     win.flip()
     cue_time = clock.getTime()
+    if cedrus_box is not None:
+        cedrus_box.write(b"e5")
+        cedrus_box.flush()
+        cedrus_box.reset_input_buffer()
 
     # -------------------------------------------------------------------------
     # Wait for response. Screen stays at FLIP B until response or timeout.
@@ -998,6 +1014,7 @@ for trial_in_session in range(total_trials):
     actual_reward = 0
     pressed_key = ""
     rt = None
+    rt_computer_clock = None
     selected_position = None
     selected_color = None
     response_time = cue_time
@@ -1010,6 +1027,7 @@ for trial_in_session in range(total_trials):
         response_time = cue_time + DEBUG_CONFIG["trial_duration"]
         keys = [(pressed_key, response_time)]
         rt = DEBUG_CONFIG["trial_duration"] * 1000
+        rt_computer_clock = rt
         selected_position = correct_color_id - 1
         selected_color = correct_color_id
         actual_reward = position_to_reward.get(best_pos) or 0
@@ -1033,11 +1051,13 @@ for trial_in_session in range(total_trials):
                 break
             trial_index += 1
             continue
-        rt = (response_time - cue_time) * 1000
+        rt_computer_clock = (response_time - cue_time) * 1000
         if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+            rt = keys[0][2]
             selected_color = CEDRUS_BUTTON_TO_COLOR_ID[pressed_key]
             selected_position = selected_color - 1
         else:
+            rt = rt_computer_clock
             selected_position = response_keys.index(pressed_key)
             selected_color = selected_position + 1  # color pressed (1–4)
         # Find position with that color; reward = position_to_reward[that_pos] (0 if None)
@@ -1045,6 +1065,7 @@ for trial_in_session in range(total_trials):
         actual_reward = (position_to_reward.get(pos_with_color) or 0) if pos_with_color is not None else 0
     elif not DEBUG_CONFIG["enabled"]:
         rt = MAX_WAIT_TIME * 1000
+        rt_computer_clock = rt
 
     cum_reward += actual_reward * REWARD_MONEY_FACTOR
     cum_reward = round(cum_reward, 2)
@@ -1098,6 +1119,8 @@ for trial_in_session in range(total_trials):
         keys=keys,
         cue_time=cue_time,
         response_time=response_time,
+        rt_ms=rt,
+        rt_computer_clock_ms=rt_computer_clock,
         end_trial_time=end_trial_time,
         actual_reward=actual_reward,
         max_reward=max_reward,
