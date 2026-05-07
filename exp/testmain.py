@@ -80,7 +80,7 @@ SESSION_CONFIG = [
     {"reward_conditions": ALL_REWARD_CONDITIONS, "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
     {"reward_conditions": ALL_REWARD_CONDITIONS, "n_blocks": 8, "n_per_block": 50, "center": False, "color_map": False},
 ]
-MAX_WAIT_TIME = 2.0
+MAX_WAIT_TIME = 4.0
 # Trial start jitter (match paradigm: TrialStartJitterOffsetTime, MeanTime, MaxTime)
 TRIAL_START_JITTER_OFFSET = 1.0
 TRIAL_START_JITTER_MEAN = 0.5
