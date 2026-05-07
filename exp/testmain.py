@@ -916,7 +916,9 @@ block_break_text = visual.TextStim(
 
 def _load_session_instruction(session: int) -> str:
     """Load instruction text for session (1-based)."""
-    if session in (4, 5):
+    if session == 1:
+        path = INSTRUCTION_DIR / f"CCRP instruction ses 1 {RESPONSE_DEVICE}.txt"
+    elif session in (4, 5):
         path = INSTRUCTION_DIR / "CCRP instruction ses 4-5.txt"
     elif session >= 6:
         path = INSTRUCTION_DIR / "CCRP instruction exp ses.txt"
