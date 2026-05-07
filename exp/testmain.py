@@ -21,32 +21,76 @@ from datetime import datetime
 
 from psychopy import gui, logging, visual, core, event, monitors
 
+try:
+    import serial
+    from serial.tools import list_ports
+except ImportError:
+    serial = None
+    list_ports = None
+
 logging.console.setLevel(logging.DEBUG)
 # Centralized debug switches. Add new toggles here as needed.
+# Default monitor shown in the initial session dialog.
+RESPONSE_DEVICE_KEYBOARD = "keyboard"
+RESPONSE_DEVICE_CEDRUS = "response_box_cedrus"
+RESPONSE_DEVICE_SELF_MADE = "self-made-response-box"
+
+############################# TO MODIFY BELOW
 DEBUG_CONFIG = {
-    "enabled": False,
+    "enabled": True,
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
     "auto_advance_instructions": False,
     "auto_respond": True,
+    "simulate_response_box": True,  # In debug auto-response mode, skip serial hardware even if a response box is selected.
     "short_feedback": True,
     "full_screen": True,  # Toggle fullscreen quickly during testing
 }
+DEFAULT_PARTICIPANT = "tests0"
+DEFAULT_MONITOR_NAME = "room1_a1"
+DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_SELF_MADE
+############################# TO MODIFY ABOVE
+CODE_VERSION = "v2-2026-05-07"
+
+DEFAULT_COLOR_MAP_LAYOUT = "horizontal" if DEFAULT_RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS else "keyboard"
+CEDRUS_VID = 0x0403
+CEDRUS_PID = 0x6001
+CEDRUS_BAUDRATE = 115200
+CEDRUS_BUTTON_TO_COLOR_ID = {"2": 1, "3": 2, "4": 3, "5": 4}
+SELF_MADE_PIN_TO_COLOR_ID = {"6": 1, "7": 2, "8": 4, "9": 3}
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
+COLOR_KEY_MAPPING = "rgby"
 MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experimental config.
+# Explicit cue-condition labels used in output. The trial generator chooses from
+# these configured conditions and writes the configured label directly.
+REWARD_CONDITIONS = [
+    {"values": (1,), "label": "(1)"},
+    {"values": (2,), "label": "(2)"},
+    {"values": (3,), "label": "(3)"},
+    {"values": (4,), "label": "(4)"},
+    {"values": (2, 1), "label": "(2,1)"},
+    {"values": (3, 1), "label": "(3,1)"},
+    {"values": (4, 1), "label": "(4,1)"},
+    {"values": (3, 2), "label": "(3,2)"},
+    {"values": (4, 2), "label": "(4,2)"},
+    {"values": (4, 3), "label": "(4,3)"},
+]
+SINGLE_REWARD_CONDITIONS = REWARD_CONDITIONS[:4]
+ALL_REWARD_CONDITIONS = REWARD_CONDITIONS
+
 # Per-session config (index = session - 1). Session 6+ uses config index 5.
-# reward_value_set: which reward values (1–4) appear in trials. [1]=one pos has reward 1; [1,2]=two pos have rewards 1,2.
+# reward_conditions: which reward values (1–4) appear in trials and the CueCondition label to write.
 # Color is always independent from reward value (each position gets a random color assignment).
 SESSION_CONFIG = [
-    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": True, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4]], "n_blocks": 10, "n_per_block": 20, "center": False, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": True},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": False},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
-    {"reward_value_set": [[1], [2], [3], [4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], "n_blocks": 8, "n_per_block": 50, "center": False, "color_map": False},
+    {"reward_conditions": SINGLE_REWARD_CONDITIONS, "n_blocks": 10, "n_per_block": 20, "center": True, "color_map": True},
+    {"reward_conditions": SINGLE_REWARD_CONDITIONS, "n_blocks": 10, "n_per_block": 20, "center": False, "color_map": True},
+    {"reward_conditions": ALL_REWARD_CONDITIONS, "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": True},
+    {"reward_conditions": ALL_REWARD_CONDITIONS, "n_blocks": 4, "n_per_block": 30, "center": False, "color_map": False},
+    {"reward_conditions": ALL_REWARD_CONDITIONS, "n_blocks": 4, "n_per_block": 50, "center": False, "color_map": False},
+    {"reward_conditions": ALL_REWARD_CONDITIONS, "n_blocks": 8, "n_per_block": 50, "center": False, "color_map": False},
 ]
-MAX_WAIT_TIME = 2.0
+MAX_WAIT_TIME = 4.0
 # Trial start jitter (match paradigm: TrialStartJitterOffsetTime, MeanTime, MaxTime)
 TRIAL_START_JITTER_OFFSET = 1.0
 TRIAL_START_JITTER_MEAN = 0.5
@@ -55,7 +99,7 @@ TRIAL_START_JITTER_MAX = 5.0
 FIRST_WARMUP_TRIALS = 4
 OTHER_WARMUP_TRIALS = 2
 FEEDBACK_WAIT_TIME = 1.5
-REWARD_MONEY_FACTOR = 0.1
+REWARD_MONEY_FACTOR = 0.05
 RESPONSE_DEADLINE = 2.0  # seconds, match paradigm ResponseDeadline
 
 # Stimulus colors RGB (-1 to 1): Red, Green, Blue, Yellow
@@ -114,7 +158,7 @@ COLOR_MAP_Y_DEG = -150 * STIM_FACTOR            # -6 deg
 
 # Display / monitor (match paradigm exactly)
 WIN_SIZE_PIX = (1920, 1080)
-MONITOR_NAME = "room1_a1"
+MONITOR_NAME = DEFAULT_MONITOR_NAME
 MONITOR_CHOICES = [f"room1_a{i}" for i in range(1, 11)]
 MONITOR_WIDTH_CM = 52
 MONITOR_DISTANCE_CM = 60
@@ -140,13 +184,21 @@ NUM_POSITIONS = 4
 
 # Session dialog: run one session per launch (6+ uses experimental config: 8 blocks × 50 trials)
 session_dlg = gui.Dlg(title="CCRP Session")
-session_dlg.addField("Participant", initial="1")
+session_dlg.addField("Participant", initial=DEFAULT_PARTICIPANT)
 session_dlg.addField("Session", initial=1)
 session_dlg.addField("Age", initial="")
 session_dlg.addField("Gender", initial="NA")
+session_dlg.addField("Handedness", initial="right", choices=["right", "left", "ambidextrous", "other"])
+session_dlg.addField("Color vision", initial="normal", choices=["normal", "not normal", "unknown"])
+session_dlg.addField("Eye vision", initial="normal", choices=["normal", "corrected", "not normal", "unknown"])
+session_dlg.addField(
+    "Response device",
+    initial=DEFAULT_RESPONSE_DEVICE,
+    choices=[RESPONSE_DEVICE_KEYBOARD, RESPONSE_DEVICE_CEDRUS, RESPONSE_DEVICE_SELF_MADE],
+)
 session_dlg.addField(
     "Color map layout",
-    initial="keyboard",
+    initial=DEFAULT_COLOR_MAP_LAYOUT,
     choices=["horizontal", "keyboard"],
     tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Sessions 1–3)",
 )
@@ -164,8 +216,12 @@ if SESSION < 1 or SESSION > MAX_SESSION:
     raise SystemExit(f"Session must be between 1 and {MAX_SESSION}.")
 AGE = str(session_dlg.data[2]).strip() or "NA"
 GENDER = str(session_dlg.data[3]).strip() or "NA"
-COLOR_MAP_LAYOUT = session_dlg.data[4]  # "horizontal" or "keyboard"
-MONITOR_NAME = str(session_dlg.data[5]).strip() or MONITOR_NAME
+HANDEDNESS = str(session_dlg.data[4]).strip() or "NA"
+COLOR_VISION = str(session_dlg.data[5]).strip() or "NA"
+EYE_VISION = str(session_dlg.data[6]).strip() or "NA"
+RESPONSE_DEVICE = session_dlg.data[7]
+COLOR_MAP_LAYOUT = session_dlg.data[8]  # "horizontal" or "keyboard"
+MONITOR_NAME = str(session_dlg.data[9]).strip() or MONITOR_NAME
 
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
 _base_stem = f"CCRP_subj{PARTICIPANT}_ses{SESSION}"
@@ -202,6 +258,8 @@ def _build_trial_row(
     keys,
     cue_time,
     response_time,
+    rt_ms,
+    rt_computer_clock_ms,
     end_trial_time,
     actual_reward,
     max_reward,
@@ -209,7 +267,8 @@ def _build_trial_row(
     session,
     block,
     trial_index,
-    trial_condition_values,
+    trial_condition_label,
+    num_cues,
     warm_up=0,
     trial_start_jitter_time_ms=0,
     trial_wall_clock_str="",
@@ -219,61 +278,74 @@ def _build_trial_row(
     # Color layout: 4-digit strings (position 0..3). Rewards from position_to_reward.
     colors = [position_to_color_id[i] or 0 for i in range(NUM_POSITIONS)]
     reward_vals = [position_to_reward[i] or 0 for i in range(NUM_POSITIONS)]
-    sorted_colors = sorted(colors)
-    color_ranks = [NUM_POSITIONS - sorted_colors.index(colors[i]) for i in range(NUM_POSITIONS)]
+    sorted_reward_values = sorted((value for value in reward_vals if value), reverse=True)
+    reward_rank_by_value = {value: rank + 1 for rank, value in enumerate(sorted_reward_values)}
+    reward_ranks = [reward_rank_by_value.get(value, 4) if value else 4 for value in reward_vals]
 
     # Response
     sel = selected_position
     has_response = sel is not None
-    resp_loc = "".join("1" if i == sel else "0" for i in range(NUM_POSITIONS)) if has_response else "0000"
-    point_target = (sel + 1) if has_response else 0
     sel_color = position_to_color_id[sel] if has_response else None
 
-    rt_sec = (response_time - cue_time) if (keys and pressed_key != "escape") else (MAX_WAIT_TIME if not keys else 0.0)
+    if rt_ms is None:
+        rt_ms = MAX_WAIT_TIME * 1000 if not keys else 0.0
+    if rt_computer_clock_ms is None:
+        rt_computer_clock_ms = rt_ms
+    rt_sec = rt_ms / 1000
+    rt_difference = rt_computer_clock_ms - rt_ms
     late = rt_sec > RESPONSE_DEADLINE
     intr = 1 if (has_response and sel_color is None) else 0
     # ACC: correct = selected the circle with highest reward (color-to-key rule)
     acc = 1 if actual_reward == max_reward and max_reward > 0 else 0
-    color_exp = sel_color if (has_response and sel_color) else 0
-    color_rank_resp = color_ranks[sel] if (has_response and sel_color) else 0
-    pos_with_selected_color = next((p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == selected_color), None) if selected_color is not None else None
-    exp_reward = (position_to_reward[pos_with_selected_color] or 0) if (has_response and pos_with_selected_color is not None) else 0
-
-    reward_condition_values = tuple(sorted(trial_condition_values))
-    cond = "{" + ",".join(str(v) for v in reward_condition_values) + "}"
-    num_cues = len(reward_condition_values)
+    chosen_location_idx = next(
+        (i for i in range(NUM_POSITIONS) if position_to_color_id.get(i) == selected_color),
+        None,
+    ) if selected_color is not None else None
+    resp_loc = (chosen_location_idx + 1) if chosen_location_idx is not None else 0
+    point_target = "".join("1" if i == chosen_location_idx else "0" for i in range(NUM_POSITIONS)) if chosen_location_idx is not None else "0000"
+    cue_response_exp_value = reward_vals[chosen_location_idx] if chosen_location_idx is not None else 0
+    cue_rank_response = reward_ranks[chosen_location_idx] if chosen_location_idx is not None else 0
+    exp_reward = max((value for value in reward_vals if value), default=0)
 
     return {
         "ExperimentName": EXPERIMENT_NAME,
         "ExperimentNumber": EXPERIMENT_NUMBER,
+        "CodeVersion": CODE_VERSION,
         "ColorMapLayout": COLOR_MAP_LAYOUT,
+        "ColorKeyMapping": COLOR_KEY_MAPPING,
+        "ResponseDevice": RESPONSE_DEVICE,
         "Subject": PARTICIPANT,
+        "Handedness": HANDEDNESS,
+        "ColorVision": COLOR_VISION,
+        "EyeVision": EYE_VISION,
         "Session": session + 1,
         "Block": block,
         "Trial": trial_index + 1,
         "WarmUpTrial": warm_up,
-        "CueCondition": cond,
+        "CueCondition": trial_condition_label,
         "NumCues": num_cues,
         "TrialStartJitterTime": round(trial_start_jitter_time_ms, 2),  # ms
         "CueSOA": 0,
         "Cues": "".join(str(c) for c in colors),
         "CueValues": "".join(str(v) for v in reward_vals),
-        "CueRanks": "".join(str(r) for r in color_ranks),
+        "CueRanks": "".join(str(r) for r in reward_ranks),
         "Response": pressed_key or "timeout",
 
-        # RespLoc: 4-digit one-hot of selected color (CCRP: pos0=Red, pos1=Green, pos2=Blue, pos3=Yellow)
+        # RespLoc: location id of the participant's chosen cue.
         "RespLoc": resp_loc,
-        # PointTargetResponse: 1=Red, 2=Green, 3=Blue, 4=Yellow, 0=timeout
-        "PointTargetResponse": point_target, 
-        
-        "RT": round(rt_sec * 1000, 2),  # ms
+        # PointTargetResponse: 4-digit one-hot vector of chosen cue location.
+        "PointTargetResponse": point_target,
+
+        "RT": round(rt_ms, 2),  # ms
+        "RTComputerClock": round(rt_computer_clock_ms, 2),  # ms
+        "RTDifference": round(rt_difference, 2),  # RTComputerClock - RT
         "LateResponse": late, # 1 - late response, 0 - on time response
         "ACC": acc, # 1 - correct response, 0 - incorrect response
         "INTR": intr, # 1 - intrusion error, 0 - no intrusion error, if respond to the non-cued position
         "CueResponseValue": actual_reward, # the value of the cue at the selected position
-        "CueResponseExpValue": color_exp, # the color at the selected position
-        "CueRankResponse": color_rank_resp, # the rank of the color at the selected position
-        "ExpectedReward": exp_reward, # the expected reward for the trial
+        "CueResponseExpValue": cue_response_exp_value, # expected reward value at chosen location
+        "CueRankResponse": cue_rank_response, # reward-value rank at chosen location
+        "ExpectedReward": exp_reward, # the highest available reward for the trial
         "Reward": actual_reward, # the actual reward for the trial
         "MaxReward": max_reward, # the maximum reward for the trial
         "CumReward": cum_reward, # the cumulative reward for the session
@@ -291,30 +363,38 @@ def _build_trial_row(
 DAT_COLUMN_DESCRIPTIONS = {
     "ExperimentName": "Short experiment label constant.",
     "ExperimentNumber": "Numeric experiment ID constant.",
+    "CodeVersion": "Experiment code version configured at the top of the script.",
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
+    "ColorKeyMapping": "Four-character response-color mapping string. Current fixed value rgby means red, green, blue, yellow.",
+    "ResponseDevice": "Response input device used for this run: keyboard, response_box_cedrus, or self-made-response-box.",
     "Subject": "Participant ID from the session dialog.",
+    "Handedness": "Participant handedness from the session dialog.",
+    "ColorVision": "Participant color vision status from the session dialog.",
+    "EyeVision": "Participant eye vision status from the session dialog.",
     "Session": "Session index written as 0-based internal index plus 1 (matches dialog session number).",
     "Block": "Block number (1-based) within the session.",
     "Trial": "Trial index within the session (1-based, increments across warmup and main).",
     "WarmUpTrial": "1 if warmup trial, 0 if main trial.",
-    "CueCondition": "Reward-set condition assigned during trial generation from reward_value_set (one of {1},{2},{3},{4},{1,2},{1,3},{1,4},{2,3},{2,4},{3,4}).",
-    "NumCues": "Number of reward digits in the assigned reward-set condition for this trial (1 or 2).",
+    "CueCondition": "Label for reward-value combination among non-zero CueValues in this trial. Allowed conditions: (1), (2), (3), (4), (2,1), (3,1), (4,1), (3,2), (4,2), (4,3). Order is descending reward value and ignores location order.",
+    "NumCues": "Count of cued stimulus locations this trial.",
     "TrialStartJitterTime": "Duration of fixation before stimulus onset (ms); actual drawn jitter or DEBUG substitute.",
     "CueSOA": "Cue–target stimulus onset asynchrony (ms); 0 here (no separate cue–mask SOA in this script).",
     "Cues": "Four digits: color ID 1–4 at each spatial slot 0–3; 0 = no stimulus at that slot.",
     "CueValues": "Four digits: reward digit at each slot; 0 = no reward at that slot.",
-    "CueRanks": "Four digits: within-trial rank from color IDs (larger color ID → larger rank digit).",
+    "CueRanks": "Four digits: reward-value rank at each location; 1 = highest reward, 2 = second-highest reward when two cues are present, 4 = no reward at that location.",
     "Response": "Key pressed (lowercase) or timeout; escape not logged as a trial row.",
-    "RespLoc": "Four-digit one-hot: 1 at the index of the pressed response key (0–3), else 0; 0000 if no response.",
-    "PointTargetResponse": "1–4 = Red/Green/Blue/Yellow by response-key index when a key was pressed; 0 if timeout.",
-    "RT": "Reaction time (ms) from stimulus onset to keypress; timeout uses max wait; DEBUG uses artificial RT.",
+    "RespLoc": "Location id (1-4) of where the participant's chosen cue is on screen; 0 if no valid chosen location.",
+    "PointTargetResponse": "Four-digit one-hot vector from location 1 to 4: 1 marks where the participant's chosen cue is, 0 marks all other locations; 0000 if no valid chosen location.",
+    "RT": "Reaction time (ms). For response_box_cedrus and self-made-response-box, this uses the device timer; for keyboard, this matches RTComputerClock.",
+    "RTComputerClock": "Reaction time (ms) using the PsychoPy computer clock.",
+    "RTDifference": "RTComputerClock minus RT (ms). For keyboard this is 0; for serial response boxes this shows computer-clock minus device-clock RT.",
     "LateResponse": "True if RT (seconds) exceeded RESPONSE_DEADLINE; False otherwise.",
     "ACC": "1 if obtained reward equals max possible reward on that trial and max > 0; else 0.",
     "INTR": "1 if participant responded with a key whose mapped color was absent on screen; else 0.",
     "CueResponseValue": "Reward points obtained from the chosen color’s on-screen location (0 if wrong/absent).",
-    "CueResponseExpValue": "Color ID (1–4) at the spatial slot tied to the pressed key; 0 if invalid.",
-    "CueRankResponse": "CueRanks digit at the pressed-key slot when valid; 0 if invalid.",
-    "ExpectedReward": "Reward digit at the screen location that shows the pressed color (0 if that color absent).",
+    "CueResponseExpValue": "Expected reward value at location chosen.",
+    "CueRankResponse": "Rank of value at location chosen; 1 = highest reward, 2 = second-highest reward when two cues are present, 4 = chosen location has no reward, 0 = no valid chosen location.",
+    "ExpectedReward": "Highest possible reward in this trial, computed as max non-zero digit in CueValues (0 if no non-zero CueValues).",
     "Reward": "Same as obtained points for this trial (CueResponseValue).",
     "MaxReward": "Maximum reward digit among cued locations this trial.",
     "CumReward": "Cumulative monetary-style score (points × REWARD_MONEY_FACTOR), running total.",
@@ -346,9 +426,12 @@ def _build_metadata(
         psychopy_version = "unknown"
 
     program_name = Path(__file__).name
-    reward_set = cfg.get("reward_value_set", [])
-    n_reward_conds = len(reward_set)
+    reward_conditions = cfg.get("reward_conditions", [])
+    reward_labels = [cond["label"] for cond in reward_conditions]
+    n_reward_conds = len(reward_conditions)
     reps_per_condition = (n_trials_per_block // n_reward_conds) if n_reward_conds else 0
+    color_names = ["Red", "Green", "Blue", "Yellow"]
+    location_names = ["upper right", "upper left", "lower left", "lower right"]
     debug_on = bool(DEBUG_CONFIG.get("enabled"))
     jitter_note = (
         f"DEBUG: fixation/jitter replaced by {DEBUG_CONFIG.get('trial_duration', 0) * 1000:.4f} ms when enabled."
@@ -374,10 +457,19 @@ def _build_metadata(
             "total_trials_warmup_plus_main": n_trials_total,
             "single_stimulus_at_center": bool(cfg.get("center", False)),
             "color_key_legend_on_screen_sessions_1_to_3": SESSION in (1, 2, 3),
-            "reward_value_conditions": reward_set,
+            "cue_condition_labels": reward_labels,
             "number_of_reward_conditions": n_reward_conds,
             "main_trials_per_reward_condition_per_block_balanced": reps_per_condition,
-            "color_to_key_mapping_red_green_blue_yellow": [k.upper() for k in COLOR_KEYS],
+            "color_id_mapping_for_cues": {str(i + 1): color_names[i] for i in range(NUM_POSITIONS)},
+            "color_to_key_mapping": {color_names[i]: COLOR_KEYS[i].upper() for i in range(NUM_POSITIONS)},
+            "location_id_mapping": {
+                str(i + 1): {
+                    "screen_location": location_names[i],
+                    "position_deg_x_y": [round(POSITIONS_DEG[i][0], 3), round(POSITIONS_DEG[i][1], 3)],
+                }
+                for i in range(NUM_POSITIONS)
+            },
+            "location_id_mapping_note": "Location ids are 1-based positions in Cues, CueValues, CueRanks, RespLoc, and PointTargetResponse.",
             "per_trial_logging_note": "TrialWallClockTime is local wall time; SessionElapsedSec is monotonic elapsed seconds since pre-loop session start.",
         },
         "run_and_display_metadata": {
@@ -385,18 +477,33 @@ def _build_metadata(
             "experimental_program": program_name,
             "experiment_name": EXPERIMENT_NAME,
             "experiment_number": EXPERIMENT_NUMBER,
+            "code_version": CODE_VERSION,
             "exp_start_time": exp_start_time_str,
             "debug_config_enabled": debug_on,
+            "color_key_mapping": COLOR_KEY_MAPPING,
+            "color_key_mapping_description": (
+                "Current fixed mapping is rgby: red, green, blue, yellow. "
+                "For keyboard, rgby corresponds to keys d, c, k, m. "
+                "For response_box_cedrus, rgby corresponds to the horizontal buttons from left to right. "
+                "For self-made-response-box, rgby corresponds to left middle finger, left index finger, "
+                "right middle finger, right index finger."
+            ),
             "subject": PARTICIPANT,
             "age": AGE,
             "gender": GENDER,
+            "handedness": HANDEDNESS,
+            "color_vision": COLOR_VISION,
+            "eye_vision": EYE_VISION,
             "practice": "Y" if SESSION <= 5 else "N",
             "session": SESSION,
             "number_of_blocks": n_blocks,
             "total_number_of_trials": n_trials_total,
             "reward_money_factor": REWARD_MONEY_FACTOR,
             "full_screen": "Y" if DEBUG_CONFIG.get("full_screen", True) else "N",
+            "response_device": RESPONSE_DEVICE,
             "response_keys": [k.upper() for k in response_keys],
+            "response_box_cedrus_buttons": CEDRUS_BUTTON_TO_COLOR_ID,
+            "self_made_response_box_pins": SELF_MADE_PIN_TO_COLOR_ID,
             "response_deadline": RESPONSE_DEADLINE,
             "startup_display_check_description": "After Window open, compare actual win.size to WIN_SIZE_PIX and win.getActualFrameRate() to expected Hz; on mismatch, C continues and ESC exits.",
             "fixed_refresh_rate_expected_hz": EXPECTED_REFRESH_HZ,
@@ -456,6 +563,112 @@ def _run_startup_display_check(win) -> tuple[float, tuple[int, int], bool, bool]
             raise SystemExit("Display check: user chose exit.")
         mismatch_continued = True
     return measured, actual, spec_ok, mismatch_continued
+
+
+def _find_cedrus_port() -> str:
+    """Find the Cedrus FTDI serial port; fall back to the usual Linux name."""
+    if list_ports is not None:
+        for port in list_ports.comports():
+            if port.vid == CEDRUS_VID and port.pid == CEDRUS_PID:
+                return port.device
+    return "/dev/ttyUSB0"
+
+
+def _find_self_made_response_box_port() -> str:
+    if list_ports is not None:
+        for port in list_ports.comports():
+            if port.vid == CEDRUS_VID and port.pid == CEDRUS_PID:
+                continue
+            if port.device.startswith(("/dev/ttyACM", "/dev/ttyUSB")):
+                return port.device
+    return "/dev/ttyACM0"
+
+
+def _open_cedrus_box():
+    if serial is None:
+        raise SystemExit("pyserial is required for response box cedrus.")
+
+    port_name = _find_cedrus_port()
+    box = serial.Serial(port_name, baudrate=CEDRUS_BAUDRATE, timeout=0.001)
+    answer = b""
+
+    for _ in range(10):
+        box.reset_input_buffer()
+        box.write(b"_c1")
+        time.sleep(0.1)
+        answer = box.read(64)
+        if answer.startswith(b"_xid"):
+            print(f"Using response box cedrus on {port_name}.")
+            return box
+
+    box.close()
+    raise SystemExit(f"No response box cedrus found on {port_name}. Got: {answer!r}")
+
+
+def _open_self_made_response_box():
+    if serial is None:
+        raise SystemExit("pyserial is required for self-made-response-box.")
+
+    port_name = _find_self_made_response_box_port()
+    box = serial.Serial(port_name, baudrate=CEDRUS_BAUDRATE, timeout=0.001)
+    time.sleep(2.0)
+    box.reset_input_buffer()
+    print(f"Using {RESPONSE_DEVICE_SELF_MADE} on {port_name}.")
+    return box
+
+
+def _wait_for_cedrus_response(box, clock, max_wait):
+    buffer = b""
+    start = clock.getTime()
+
+    while clock.getTime() - start < max_wait:
+        escape_keys = event.getKeys(keyList=["escape"], timeStamped=clock)
+        if escape_keys:
+            return ("escape", escape_keys[0][1])
+
+        buffer += box.read(box.in_waiting or 1)
+
+        while b"k" in buffer:
+            packet_start = buffer.find(b"k")
+            buffer = buffer[packet_start:]
+            if len(buffer) < 6:
+                break
+
+            packet = buffer[:6]
+            buffer = buffer[6:]
+            info = packet[1]
+            button = str((info & 0xE0) >> 5 or 8)
+            button_down = bool(info & 0x10)
+            cedrus_rt_ms = int.from_bytes(packet[2:6], "little")
+
+            if button_down and button in CEDRUS_BUTTON_TO_COLOR_ID:
+                return (button, clock.getTime(), cedrus_rt_ms)
+
+    return None
+
+
+def _wait_for_self_made_response_box(box, clock, max_wait):
+    buffer = ""
+    start = clock.getTime()
+
+    while clock.getTime() - start < max_wait:
+        escape_keys = event.getKeys(keyList=["escape"], timeStamped=clock)
+        if escape_keys:
+            return ("escape", escape_keys[0][1])
+
+        buffer += box.read(box.in_waiting or 1).decode("ascii", errors="ignore")
+
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            parts = line.strip().split(",")
+            if len(parts) != 2:
+                continue
+
+            pin, latency_us = parts
+            if pin in SELF_MADE_PIN_TO_COLOR_ID:
+                return (pin, clock.getTime(), float(latency_us) / 1000)
+
+    return None
 
 
 # Create window matching paradigm display settings
@@ -575,11 +788,12 @@ total_warmup = n_warmup_first + (n_blocks - 1) * n_warmup_other
 total_trials = total_warmup + n_blocks * n_trials_per_block
 
 
-def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
+def _pool_for_reward_condition(reward_condition: dict, cfg: dict) -> list:
     """
     Enumerate all trial variants for a reward-value condition.
 
-    reward_values comes from the cfg["reward_value_set"], example: (1, 2), (1, 3), (1, 4), (2, 3), (2, 4), (3, 4)
+    reward_condition comes from cfg["reward_conditions"], including both reward values
+    and the configured CueCondition label to write.
 
     Output format:
       {"position_to_color_id": {0..3: color_id 1–4 or None},
@@ -588,11 +802,16 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
     Color is always independent from reward value. Each position gets a color (1–4);
     reward values are fixed by the condition.
     """
+    reward_values = tuple(reward_condition["values"])
+    condition_label = reward_condition["label"]
+
     def make_trial(position_to_color_id: dict, position_to_reward: dict) -> dict:
         return {
             "position_to_color_id": position_to_color_id,
             "position_to_reward": position_to_reward,
-            "reward_condition_values": tuple(reward_values), #gives example: (1, 2)
+            "reward_condition_values": reward_values,
+            "cue_condition": condition_label,
+            "num_cues": len(reward_values),
         }
 
     n_positions = NUM_POSITIONS
@@ -641,9 +860,9 @@ def _pool_for_reward_values(reward_values: list, cfg: dict) -> list:
 
 def _build_trials(cfg: dict) -> list:
     """Reward-value-balanced: each condition reps per block. Warm-up trials prepended per block (match paradigm)."""
-    reward_value_set, n_blocks, n_per_block = cfg["reward_value_set"], cfg["n_blocks"], cfg["n_per_block"]
-    reps_per_condition = n_per_block // len(reward_value_set) #how many trials each condition repeats
-    trial_pools = [_pool_for_reward_values(reward_values, cfg) for reward_values in reward_value_set]
+    reward_conditions, n_blocks, n_per_block = cfg["reward_conditions"], cfg["n_blocks"], cfg["n_per_block"]
+    reps_per_condition = n_per_block // len(reward_conditions) #how many trials each condition repeats
+    trial_pools = [_pool_for_reward_condition(reward_condition, cfg) for reward_condition in reward_conditions]
 
     def _make_block():
         block = [random.choice(pool) for pool in trial_pools for _ in range(reps_per_condition)]
@@ -664,7 +883,8 @@ def _build_trials(cfg: dict) -> list:
         # {
         # "position_to_color_id": {0: 3, 1: 1, 2: 4, 3: 2},
         # "position_to_reward": {0: None, 1: 1, 2: None, 3: 4},
-        # "reward_condition_values": (1, 4)
+        # "reward_condition_values": (4, 1),
+        # "cue_condition": "(4,1)"
         # }
 
         for i, t in enumerate(warmup_trials):
@@ -678,7 +898,8 @@ trial_data_list = _build_trials(cfg)
 # trial_data_list[i] = {
 #   "position_to_color_id": {...},
 #   "position_to_reward": {...},
-#   "reward_condition_values": (1, 2),   # or (1,), (4,), etc.
+#   "reward_condition_values": (2, 1),   # or (1,), (4,), etc.
+#   "cue_condition": "(2,1)",
 #   "warm_up": 1 or 0,
 #   "block": 1-based block number,
 #   "trial_in_block": 1-based index within that block (including warmup)
@@ -731,7 +952,9 @@ block_break_text = visual.TextStim(
 
 def _load_session_instruction(session: int) -> str:
     """Load instruction text for session (1-based)."""
-    if session in (4, 5):
+    if session == 1:
+        path = INSTRUCTION_DIR / f"CCRP instruction ses 1 {RESPONSE_DEVICE}.txt"
+    elif session in (4, 5):
         path = INSTRUCTION_DIR / "CCRP instruction ses 4-5.txt"
     elif session >= 6:
         path = INSTRUCTION_DIR / "CCRP instruction exp ses.txt"
@@ -756,6 +979,19 @@ else:
 
 # Create clock for response time measurement
 clock = core.Clock()
+serial_response_box = None
+simulate_response_box = (
+    DEBUG_CONFIG["enabled"]
+    and DEBUG_CONFIG["auto_respond"]
+    and DEBUG_CONFIG.get("simulate_response_box", True)
+    and RESPONSE_DEVICE in (RESPONSE_DEVICE_CEDRUS, RESPONSE_DEVICE_SELF_MADE)
+)
+if simulate_response_box:
+    print(f"DEBUG: simulating {RESPONSE_DEVICE}; serial response box will not be opened.")
+elif RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+    serial_response_box = _open_cedrus_box()
+elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
+    serial_response_box = _open_self_made_response_box()
 
 # Initialize cumulative reward and trial data log
 cum_reward = 0.0
@@ -860,17 +1096,26 @@ for trial_in_session in range(total_trials):
     if show_color_map:
         for rect in color_response_squares:
             rect.draw()
+    if serial_response_box is not None:
+        serial_response_box.reset_input_buffer()
     win.flip()
     cue_time = clock.getTime()
+    if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS and serial_response_box is not None:
+        serial_response_box.write(b"e5")
+        serial_response_box.flush()
+    elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE and serial_response_box is not None:
+        serial_response_box.write(b"S")
+        serial_response_box.flush()
 
     # -------------------------------------------------------------------------
-    # Wait for key response (D/C/K/M or escape). Screen stays at FLIP B until then.
+    # Wait for response. Screen stays at FLIP B until response or timeout.
     # -------------------------------------------------------------------------
     rewards_at_positions = [r for r in position_to_reward.values() if r is not None]
     max_reward = max(rewards_at_positions) if rewards_at_positions else 0
     actual_reward = 0
     pressed_key = ""
     rt = None
+    rt_computer_clock = None
     selected_position = None
     selected_color = None
     response_time = cue_time
@@ -883,12 +1128,20 @@ for trial_in_session in range(total_trials):
         response_time = cue_time + DEBUG_CONFIG["trial_duration"]
         keys = [(pressed_key, response_time)]
         rt = DEBUG_CONFIG["trial_duration"] * 1000
+        rt_computer_clock = rt
         selected_position = correct_color_id - 1
         selected_color = correct_color_id
         actual_reward = position_to_reward.get(best_pos) or 0
     else:
         event.clearEvents()
-        keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
+        if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+            cedrus_response = _wait_for_cedrus_response(serial_response_box, clock, MAX_WAIT_TIME)
+            keys = [cedrus_response] if cedrus_response else None
+        elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
+            self_made_response = _wait_for_self_made_response_box(serial_response_box, clock, MAX_WAIT_TIME)
+            keys = [self_made_response] if self_made_response else None
+        else:
+            keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
 
     if keys and not DEBUG_CONFIG["enabled"]:
         pressed_key = keys[0][0]
@@ -902,14 +1155,25 @@ for trial_in_session in range(total_trials):
                 break
             trial_index += 1
             continue
-        rt = (response_time - cue_time) * 1000
-        selected_position = response_keys.index(pressed_key)
-        selected_color = selected_position + 1  # color pressed (1–4)
+        rt_computer_clock = (response_time - cue_time) * 1000
+        if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+            rt = keys[0][2]
+            selected_color = CEDRUS_BUTTON_TO_COLOR_ID[pressed_key]
+            selected_position = selected_color - 1
+        elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
+            rt = keys[0][2]
+            selected_color = SELF_MADE_PIN_TO_COLOR_ID[pressed_key]
+            selected_position = selected_color - 1
+        else:
+            rt = rt_computer_clock
+            selected_position = response_keys.index(pressed_key)
+            selected_color = selected_position + 1  # color pressed (1–4)
         # Find position with that color; reward = position_to_reward[that_pos] (0 if None)
         pos_with_color = next((p for p in range(4) if position_to_color_id.get(p) == selected_color), None)
         actual_reward = (position_to_reward.get(pos_with_color) or 0) if pos_with_color is not None else 0
     elif not DEBUG_CONFIG["enabled"]:
         rt = MAX_WAIT_TIME * 1000
+        rt_computer_clock = rt
 
     cum_reward += actual_reward * REWARD_MONEY_FACTOR
     cum_reward = round(cum_reward, 2)
@@ -928,7 +1192,7 @@ for trial_in_session in range(total_trials):
         feedback1.setText(str(actual_reward) + " / " + str(max_reward))  # e.g. "2 / 4"
         feedback1.bold = False
     feedback1.setColor(FEEDBACK_TEXT_COLOR)
-    feedback2.setText("%.2f" % cum_reward)  # cumulative reward
+    feedback2.setText("%.2f DKK" % cum_reward)  # cumulative reward
     feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
     current_block = trial_data["block"]
     trial_in_block = trial_data["trial_in_block"]
@@ -963,6 +1227,8 @@ for trial_in_session in range(total_trials):
         keys=keys,
         cue_time=cue_time,
         response_time=response_time,
+        rt_ms=rt,
+        rt_computer_clock_ms=rt_computer_clock,
         end_trial_time=end_trial_time,
         actual_reward=actual_reward,
         max_reward=max_reward,
@@ -970,7 +1236,8 @@ for trial_in_session in range(total_trials):
         session=session_idx,
         block=trial_data["block"],
         trial_index=trial_index,
-        trial_condition_values=trial_data["reward_condition_values"],
+        trial_condition_label=trial_data["cue_condition"],
+        num_cues=trial_data["num_cues"],
         warm_up=trial_data["warm_up"],
         trial_start_jitter_time_ms=trial_start_jitter_time_ms,
         trial_wall_clock_str=trial_wall_clock_str,
@@ -1006,8 +1273,13 @@ for trial_in_session in range(total_trials):
 if completed_normally:
     end_text.draw()
     win.flip()
-    event.waitKeys()
+    if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
+        core.wait(DEBUG_CONFIG["trial_duration"])
+    else:
+        event.waitKeys()
 
+if serial_response_box is not None:
+    serial_response_box.close()
 win.close()
 core.quit()
 

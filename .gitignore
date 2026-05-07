@@ -1,7 +1,7 @@
 exp/__pycache__/
 exp/Data/
 exp/Logs/
-exp/Instructions/
+
 exp/MaskGS.gif
 
 exp/src/__pycache__/
@@ -14,4 +14,6 @@ others/To Lea 251127/__pycache__/
 *.pdf
 others/Instructions/
 
-*/data_from_lab/
+*.csv
+*.dat
+*.png
