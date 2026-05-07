@@ -30,6 +30,12 @@ except ImportError:
 
 logging.console.setLevel(logging.DEBUG)
 # Centralized debug switches. Add new toggles here as needed.
+# Default monitor shown in the initial session dialog.
+RESPONSE_DEVICE_KEYBOARD = "keyboard"
+RESPONSE_DEVICE_CEDRUS = "response_box_cedrus"
+RESPONSE_DEVICE_SELF_MADE = "self-made-response-box"
+
+############################# TO MODIFY BELOW
 DEBUG_CONFIG = {
     "enabled": True,
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
@@ -39,12 +45,6 @@ DEBUG_CONFIG = {
     "short_feedback": True,
     "full_screen": True,  # Toggle fullscreen quickly during testing
 }
-# Default monitor shown in the initial session dialog.
-RESPONSE_DEVICE_KEYBOARD = "keyboard"
-RESPONSE_DEVICE_CEDRUS = "response_box_cedrus"
-RESPONSE_DEVICE_SELF_MADE = "self-made-response-box"
-
-############################# TO MODIFY BELOW
 DEFAULT_PARTICIPANT = "tests0"
 DEFAULT_MONITOR_NAME = "room1_a1"
 DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_SELF_MADE
