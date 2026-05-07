@@ -35,6 +35,7 @@ DEBUG_CONFIG = {
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
     "auto_advance_instructions": False,
     "auto_respond": True,
+    "simulate_response_box": True,  # In debug auto-response mode, skip serial hardware even if a response box is selected.
     "short_feedback": True,
     "full_screen": True,  # Toggle fullscreen quickly during testing
 }
@@ -979,7 +980,15 @@ else:
 # Create clock for response time measurement
 clock = core.Clock()
 serial_response_box = None
-if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+simulate_response_box = (
+    DEBUG_CONFIG["enabled"]
+    and DEBUG_CONFIG["auto_respond"]
+    and DEBUG_CONFIG.get("simulate_response_box", True)
+    and RESPONSE_DEVICE in (RESPONSE_DEVICE_CEDRUS, RESPONSE_DEVICE_SELF_MADE)
+)
+if simulate_response_box:
+    print(f"DEBUG: simulating {RESPONSE_DEVICE}; serial response box will not be opened.")
+elif RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
     serial_response_box = _open_cedrus_box()
 elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
     serial_response_box = _open_self_made_response_box()
@@ -1091,10 +1100,10 @@ for trial_in_session in range(total_trials):
         serial_response_box.reset_input_buffer()
     win.flip()
     cue_time = clock.getTime()
-    if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+    if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS and serial_response_box is not None:
         serial_response_box.write(b"e5")
         serial_response_box.flush()
-    elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
+    elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE and serial_response_box is not None:
         serial_response_box.write(b"S")
         serial_response_box.flush()
 
@@ -1264,7 +1273,10 @@ for trial_in_session in range(total_trials):
 if completed_normally:
     end_text.draw()
     win.flip()
-    event.waitKeys()
+    if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
+        core.wait(DEBUG_CONFIG["trial_duration"])
+    else:
+        event.waitKeys()
 
 if serial_response_box is not None:
     serial_response_box.close()
