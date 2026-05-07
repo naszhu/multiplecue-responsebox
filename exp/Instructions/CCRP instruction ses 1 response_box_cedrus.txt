@@ -6,11 +6,11 @@ Upon pressing *space*, a colored circle with a digit from 1 to 4 will appear in 
 
 __________
 
-Your task is report the color of the circle by pressing one of four keys: "d", "c", "k", and "m".
+Your task is report the color of the circle by pressing one of the four horizontal buttons on the response_box_cedrus.
 
-Place your left middle finger on "d", your left index finger on "c", your right middle finger on "k", and your right index finger on "m".
+Place your left middle finger on the left-most button, your left index finger on the second button from the left, your right index finger on the third button from the left, and your right middle finger on the right-most button.
 
-The keys are associated with four colors: RED, GREEN, BLUE, and YELLOW. The color-key mapping is also indicated by the colors shown on the keys.
+From left to right, the button colors are RED, GREEN, BLUE, and YELLOW. The color-key mapping is also indicated by the colors shown on the keys.
 
 The order of the colors relative to the keys are shown below the circle.
 

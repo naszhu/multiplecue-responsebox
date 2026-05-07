@@ -6,11 +6,11 @@ Upon pressing *space*, a colored circle with a digit from 1 to 4 will appear in 
 
 __________
 
-Your task is report the color of the circle by pressing one of four keys: "d", "c", "k", and "m".
+Your task is report the color of the circle by pressing one of the four keys on the self-made-response-box.
 
-Place your left middle finger on "d", your left index finger on "c", your right middle finger on "k", and your right index finger on "m".
+Place your left middle finger on the left-most key, your left index finger on the second key from the left, your right index finger on the second key from the right, and your right middle finger on the right-most key.
 
-The keys are associated with four colors: RED, GREEN, BLUE, and YELLOW. The color-key mapping is also indicated by the colors shown on the keys.
+The colors for your left middle finger, left index finger, right middle finger, and right index finger are RED, GREEN, BLUE, and YELLOW. This means left-most is RED, second from the left is GREEN, right-most is BLUE, and second from the right is YELLOW. The color-key mapping is also indicated by the colors shown on the keys.
 
 The order of the colors relative to the keys are shown below the circle.
 
