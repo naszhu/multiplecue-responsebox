@@ -53,6 +53,7 @@ SELF_MADE_PIN_TO_COLOR_ID = {"6": 1, "7": 2, "8": 4, "9": 3}
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
+CODE_VERSION = "v2-2026-05-07"
 MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experimental config.
 # Explicit cue-condition labels used in output. The trial generator chooses from
 # these configured conditions and writes the configured label directly.
@@ -302,6 +303,7 @@ def _build_trial_row(
     return {
         "ExperimentName": EXPERIMENT_NAME,
         "ExperimentNumber": EXPERIMENT_NUMBER,
+        "CodeVersion": CODE_VERSION,
         "ColorMapLayout": COLOR_MAP_LAYOUT,
         "ResponseDevice": RESPONSE_DEVICE,
         "Subject": PARTICIPANT,
@@ -353,6 +355,7 @@ def _build_trial_row(
 DAT_COLUMN_DESCRIPTIONS = {
     "ExperimentName": "Short experiment label constant.",
     "ExperimentNumber": "Numeric experiment ID constant.",
+    "CodeVersion": "Experiment code version configured at the top of the script.",
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
     "ResponseDevice": "Response input device used for this run: keyboard, response_box_cedrus, or self-made-response-box.",
     "Subject": "Participant ID from the session dialog.",
@@ -465,6 +468,7 @@ def _build_metadata(
             "experimental_program": program_name,
             "experiment_name": EXPERIMENT_NAME,
             "experiment_number": EXPERIMENT_NUMBER,
+            "code_version": CODE_VERSION,
             "exp_start_time": exp_start_time_str,
             "debug_config_enabled": debug_on,
             "subject": PARTICIPANT,
