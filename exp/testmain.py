@@ -1146,7 +1146,7 @@ for trial_in_session in range(total_trials):
         feedback1.setText(str(actual_reward) + " / " + str(max_reward))  # e.g. "2 / 4"
         feedback1.bold = False
     feedback1.setColor(FEEDBACK_TEXT_COLOR)
-    feedback2.setText("%.2f" % cum_reward)  # cumulative reward
+    feedback2.setText("%.2f DKK" % cum_reward)  # cumulative reward
     feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
     current_block = trial_data["block"]
     trial_in_block = trial_data["trial_in_block"]
