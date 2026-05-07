@@ -180,6 +180,9 @@ session_dlg.addField("Participant", initial="1")
 session_dlg.addField("Session", initial=1)
 session_dlg.addField("Age", initial="")
 session_dlg.addField("Gender", initial="NA")
+session_dlg.addField("Handedness", initial="right", choices=["right", "left", "ambidextrous", "other"])
+session_dlg.addField("Color vision", initial="normal", choices=["normal", "not normal", "unknown"])
+session_dlg.addField("Eye vision", initial="normal", choices=["normal", "corrected", "not normal", "unknown"])
 session_dlg.addField(
     "Response device",
     initial=DEFAULT_RESPONSE_DEVICE,
@@ -205,9 +208,12 @@ if SESSION < 1 or SESSION > MAX_SESSION:
     raise SystemExit(f"Session must be between 1 and {MAX_SESSION}.")
 AGE = str(session_dlg.data[2]).strip() or "NA"
 GENDER = str(session_dlg.data[3]).strip() or "NA"
-RESPONSE_DEVICE = session_dlg.data[4]
-COLOR_MAP_LAYOUT = session_dlg.data[5]  # "horizontal" or "keyboard"
-MONITOR_NAME = str(session_dlg.data[6]).strip() or MONITOR_NAME
+HANDEDNESS = str(session_dlg.data[4]).strip() or "NA"
+COLOR_VISION = str(session_dlg.data[5]).strip() or "NA"
+EYE_VISION = str(session_dlg.data[6]).strip() or "NA"
+RESPONSE_DEVICE = session_dlg.data[7]
+COLOR_MAP_LAYOUT = session_dlg.data[8]  # "horizontal" or "keyboard"
+MONITOR_NAME = str(session_dlg.data[9]).strip() or MONITOR_NAME
 
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
 _base_stem = f"CCRP_subj{PARTICIPANT}_ses{SESSION}"
@@ -299,6 +305,9 @@ def _build_trial_row(
         "ColorMapLayout": COLOR_MAP_LAYOUT,
         "ResponseDevice": RESPONSE_DEVICE,
         "Subject": PARTICIPANT,
+        "Handedness": HANDEDNESS,
+        "ColorVision": COLOR_VISION,
+        "EyeVision": EYE_VISION,
         "Session": session + 1,
         "Block": block,
         "Trial": trial_index + 1,
@@ -347,6 +356,9 @@ DAT_COLUMN_DESCRIPTIONS = {
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
     "ResponseDevice": "Response input device used for this run: keyboard, response_box_cedrus, or self-made-response-box.",
     "Subject": "Participant ID from the session dialog.",
+    "Handedness": "Participant handedness from the session dialog.",
+    "ColorVision": "Participant color vision status from the session dialog.",
+    "EyeVision": "Participant eye vision status from the session dialog.",
     "Session": "Session index written as 0-based internal index plus 1 (matches dialog session number).",
     "Block": "Block number (1-based) within the session.",
     "Trial": "Trial index within the session (1-based, increments across warmup and main).",
@@ -458,6 +470,9 @@ def _build_metadata(
             "subject": PARTICIPANT,
             "age": AGE,
             "gender": GENDER,
+            "handedness": HANDEDNESS,
+            "color_vision": COLOR_VISION,
+            "eye_vision": EYE_VISION,
             "practice": "Y" if SESSION <= 5 else "N",
             "session": SESSION,
             "number_of_blocks": n_blocks,
