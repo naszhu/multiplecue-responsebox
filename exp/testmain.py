@@ -42,12 +42,14 @@ DEBUG_CONFIG = {
 DEFAULT_MONITOR_NAME = "room1_a1"
 RESPONSE_DEVICE_KEYBOARD = "keyboard"
 RESPONSE_DEVICE_CEDRUS = "response_box_cedrus"
-DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_CEDRUS
+RESPONSE_DEVICE_SELF_MADE = "self-made-response-box"
+DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_SELF_MADE
 DEFAULT_COLOR_MAP_LAYOUT = "horizontal" if DEFAULT_RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS else "keyboard"
 CEDRUS_VID = 0x0403
 CEDRUS_PID = 0x6001
 CEDRUS_BAUDRATE = 115200
 CEDRUS_BUTTON_TO_COLOR_ID = {"2": 1, "3": 2, "4": 3, "5": 4}
+SELF_MADE_PIN_TO_COLOR_ID = {"6": 1, "7": 2, "8": 4, "9": 3}
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
@@ -181,7 +183,7 @@ session_dlg.addField("Gender", initial="NA")
 session_dlg.addField(
     "Response device",
     initial=DEFAULT_RESPONSE_DEVICE,
-    choices=[RESPONSE_DEVICE_KEYBOARD, RESPONSE_DEVICE_CEDRUS],
+    choices=[RESPONSE_DEVICE_KEYBOARD, RESPONSE_DEVICE_CEDRUS, RESPONSE_DEVICE_SELF_MADE],
 )
 session_dlg.addField(
     "Color map layout",
@@ -343,7 +345,7 @@ DAT_COLUMN_DESCRIPTIONS = {
     "ExperimentName": "Short experiment label constant.",
     "ExperimentNumber": "Numeric experiment ID constant.",
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
-    "ResponseDevice": "Response input device used for this run: keyboard or response box cedrus.",
+    "ResponseDevice": "Response input device used for this run: keyboard, response_box_cedrus, or self-made-response-box.",
     "Subject": "Participant ID from the session dialog.",
     "Session": "Session index written as 0-based internal index plus 1 (matches dialog session number).",
     "Block": "Block number (1-based) within the session.",
@@ -359,9 +361,9 @@ DAT_COLUMN_DESCRIPTIONS = {
     "Response": "Key pressed (lowercase) or timeout; escape not logged as a trial row.",
     "RespLoc": "** Location id (1-4) of where the participant's chosen cue is on screen; 0 if no valid chosen location.",
     "PointTargetResponse": "** Four-digit one-hot vector from location 1 to 4: 1 marks where the participant's chosen cue is, 0 marks all other locations; 0000 if no valid chosen location.",
-    "RT": "Reaction time (ms). For response box cedrus, this uses the Cedrus internal response timer; for keyboard, this matches RTComputerClock.",
+    "RT": "Reaction time (ms). For response_box_cedrus and self-made-response-box, this uses the device timer; for keyboard, this matches RTComputerClock.",
     "RTComputerClock": "Reaction time (ms) using the PsychoPy computer clock.",
-    "RTDifference": "RTComputerClock minus RT (ms). For keyboard this is 0; for response box cedrus this shows computer-clock minus Cedrus-clock RT.",
+    "RTDifference": "RTComputerClock minus RT (ms). For keyboard this is 0; for serial response boxes this shows computer-clock minus device-clock RT.",
     "LateResponse": "True if RT (seconds) exceeded RESPONSE_DEADLINE; False otherwise.",
     "ACC": "1 if obtained reward equals max possible reward on that trial and max > 0; else 0.",
     "INTR": "1 if participant responded with a key whose mapped color was absent on screen; else 0.",
@@ -465,6 +467,7 @@ def _build_metadata(
             "response_device": RESPONSE_DEVICE,
             "response_keys": [k.upper() for k in response_keys],
             "response_box_cedrus_buttons": CEDRUS_BUTTON_TO_COLOR_ID,
+            "self_made_response_box_pins": SELF_MADE_PIN_TO_COLOR_ID,
             "response_deadline": RESPONSE_DEADLINE,
             "startup_display_check_description": "After Window open, compare actual win.size to WIN_SIZE_PIX and win.getActualFrameRate() to expected Hz; on mismatch, C continues and ESC exits.",
             "fixed_refresh_rate_expected_hz": EXPECTED_REFRESH_HZ,
@@ -535,6 +538,16 @@ def _find_cedrus_port() -> str:
     return "/dev/ttyUSB0"
 
 
+def _find_self_made_response_box_port() -> str:
+    if list_ports is not None:
+        for port in list_ports.comports():
+            if port.vid == CEDRUS_VID and port.pid == CEDRUS_PID:
+                continue
+            if port.device.startswith(("/dev/ttyACM", "/dev/ttyUSB")):
+                return port.device
+    return "/dev/ttyACM0"
+
+
 def _open_cedrus_box():
     if serial is None:
         raise SystemExit("pyserial is required for response box cedrus.")
@@ -554,6 +567,18 @@ def _open_cedrus_box():
 
     box.close()
     raise SystemExit(f"No response box cedrus found on {port_name}. Got: {answer!r}")
+
+
+def _open_self_made_response_box():
+    if serial is None:
+        raise SystemExit("pyserial is required for self-made-response-box.")
+
+    port_name = _find_self_made_response_box_port()
+    box = serial.Serial(port_name, baudrate=CEDRUS_BAUDRATE, timeout=0.001)
+    time.sleep(2.0)
+    box.reset_input_buffer()
+    print(f"Using {RESPONSE_DEVICE_SELF_MADE} on {port_name}.")
+    return box
 
 
 def _wait_for_cedrus_response(box, clock, max_wait):
@@ -582,6 +607,30 @@ def _wait_for_cedrus_response(box, clock, max_wait):
 
             if button_down and button in CEDRUS_BUTTON_TO_COLOR_ID:
                 return (button, clock.getTime(), cedrus_rt_ms)
+
+    return None
+
+
+def _wait_for_self_made_response_box(box, clock, max_wait):
+    buffer = ""
+    start = clock.getTime()
+
+    while clock.getTime() - start < max_wait:
+        escape_keys = event.getKeys(keyList=["escape"], timeStamped=clock)
+        if escape_keys:
+            return ("escape", escape_keys[0][1])
+
+        buffer += box.read(box.in_waiting or 1).decode("ascii", errors="ignore")
+
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            parts = line.strip().split(",")
+            if len(parts) != 2:
+                continue
+
+            pin, latency_us = parts
+            if pin in SELF_MADE_PIN_TO_COLOR_ID:
+                return (pin, clock.getTime(), float(latency_us) / 1000)
 
     return None
 
@@ -892,7 +941,11 @@ else:
 
 # Create clock for response time measurement
 clock = core.Clock()
-cedrus_box = _open_cedrus_box() if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS else None
+serial_response_box = None
+if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+    serial_response_box = _open_cedrus_box()
+elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
+    serial_response_box = _open_self_made_response_box()
 
 # Initialize cumulative reward and trial data log
 cum_reward = 0.0
@@ -997,13 +1050,16 @@ for trial_in_session in range(total_trials):
     if show_color_map:
         for rect in color_response_squares:
             rect.draw()
-    if cedrus_box is not None:
-        cedrus_box.reset_input_buffer()
+    if serial_response_box is not None:
+        serial_response_box.reset_input_buffer()
     win.flip()
     cue_time = clock.getTime()
-    if cedrus_box is not None:
-        cedrus_box.write(b"e5")
-        cedrus_box.flush()
+    if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+        serial_response_box.write(b"e5")
+        serial_response_box.flush()
+    elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
+        serial_response_box.write(b"S")
+        serial_response_box.flush()
 
     # -------------------------------------------------------------------------
     # Wait for response. Screen stays at FLIP B until response or timeout.
@@ -1033,8 +1089,11 @@ for trial_in_session in range(total_trials):
     else:
         event.clearEvents()
         if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
-            cedrus_response = _wait_for_cedrus_response(cedrus_box, clock, MAX_WAIT_TIME)
+            cedrus_response = _wait_for_cedrus_response(serial_response_box, clock, MAX_WAIT_TIME)
             keys = [cedrus_response] if cedrus_response else None
+        elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
+            self_made_response = _wait_for_self_made_response_box(serial_response_box, clock, MAX_WAIT_TIME)
+            keys = [self_made_response] if self_made_response else None
         else:
             keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
 
@@ -1054,6 +1113,10 @@ for trial_in_session in range(total_trials):
         if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
             rt = keys[0][2]
             selected_color = CEDRUS_BUTTON_TO_COLOR_ID[pressed_key]
+            selected_position = selected_color - 1
+        elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
+            rt = keys[0][2]
+            selected_color = SELF_MADE_PIN_TO_COLOR_ID[pressed_key]
             selected_position = selected_color - 1
         else:
             rt = rt_computer_clock
@@ -1166,8 +1229,8 @@ if completed_normally:
     win.flip()
     event.waitKeys()
 
-if cedrus_box is not None:
-    cedrus_box.close()
+if serial_response_box is not None:
+    serial_response_box.close()
 win.close()
 core.quit()
 
