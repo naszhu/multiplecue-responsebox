@@ -21,6 +21,13 @@ from datetime import datetime
 
 from psychopy import gui, logging, visual, core, event, monitors
 
+try:
+    import serial
+    from serial.tools import list_ports
+except ImportError:
+    serial = None
+    list_ports = None
+
 logging.console.setLevel(logging.DEBUG)
 # Centralized debug switches. Add new toggles here as needed.
 DEBUG_CONFIG = {
@@ -33,6 +40,14 @@ DEBUG_CONFIG = {
 }
 # Default monitor shown in the initial session dialog.
 DEFAULT_MONITOR_NAME = "room1_a1"
+RESPONSE_DEVICE_KEYBOARD = "keyboard"
+RESPONSE_DEVICE_CEDRUS = "response box cedrus"
+DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_CEDRUS
+DEFAULT_COLOR_MAP_LAYOUT = "horizontal" if DEFAULT_RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS else "keyboard"
+CEDRUS_VID = 0x0403
+CEDRUS_PID = 0x6001
+CEDRUS_BAUDRATE = 115200
+CEDRUS_BUTTON_TO_COLOR_ID = {"2": 1, "3": 2, "4": 3, "5": 4}
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
@@ -164,8 +179,13 @@ session_dlg.addField("Session", initial=1)
 session_dlg.addField("Age", initial="")
 session_dlg.addField("Gender", initial="NA")
 session_dlg.addField(
+    "Response device",
+    initial=DEFAULT_RESPONSE_DEVICE,
+    choices=[RESPONSE_DEVICE_KEYBOARD, RESPONSE_DEVICE_CEDRUS],
+)
+session_dlg.addField(
     "Color map layout",
-    initial="keyboard",
+    initial=DEFAULT_COLOR_MAP_LAYOUT,
     choices=["horizontal", "keyboard"],
     tip="horizontal: 4 boxes in a row; keyboard: 2x2 grid matching D/C/K/M (Sessions 1–3)",
 )
@@ -183,8 +203,9 @@ if SESSION < 1 or SESSION > MAX_SESSION:
     raise SystemExit(f"Session must be between 1 and {MAX_SESSION}.")
 AGE = str(session_dlg.data[2]).strip() or "NA"
 GENDER = str(session_dlg.data[3]).strip() or "NA"
-COLOR_MAP_LAYOUT = session_dlg.data[4]  # "horizontal" or "keyboard"
-MONITOR_NAME = str(session_dlg.data[5]).strip() or MONITOR_NAME
+RESPONSE_DEVICE = session_dlg.data[4]
+COLOR_MAP_LAYOUT = session_dlg.data[5]  # "horizontal" or "keyboard"
+MONITOR_NAME = str(session_dlg.data[6]).strip() or MONITOR_NAME
 
 _out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
 _base_stem = f"CCRP_subj{PARTICIPANT}_ses{SESSION}"
@@ -267,6 +288,7 @@ def _build_trial_row(
         "ExperimentName": EXPERIMENT_NAME,
         "ExperimentNumber": EXPERIMENT_NUMBER,
         "ColorMapLayout": COLOR_MAP_LAYOUT,
+        "ResponseDevice": RESPONSE_DEVICE,
         "Subject": PARTICIPANT,
         "Session": session + 1,
         "Block": block,
@@ -312,6 +334,7 @@ DAT_COLUMN_DESCRIPTIONS = {
     "ExperimentName": "Short experiment label constant.",
     "ExperimentNumber": "Numeric experiment ID constant.",
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
+    "ResponseDevice": "Response input device used for this run: keyboard or response box cedrus.",
     "Subject": "Participant ID from the session dialog.",
     "Session": "Session index written as 0-based internal index plus 1 (matches dialog session number).",
     "Block": "Block number (1-based) within the session.",
@@ -428,7 +451,9 @@ def _build_metadata(
             "total_number_of_trials": n_trials_total,
             "reward_money_factor": REWARD_MONEY_FACTOR,
             "full_screen": "Y" if DEBUG_CONFIG.get("full_screen", True) else "N",
+            "response_device": RESPONSE_DEVICE,
             "response_keys": [k.upper() for k in response_keys],
+            "response_box_cedrus_buttons": CEDRUS_BUTTON_TO_COLOR_ID,
             "response_deadline": RESPONSE_DEADLINE,
             "startup_display_check_description": "After Window open, compare actual win.size to WIN_SIZE_PIX and win.getActualFrameRate() to expected Hz; on mismatch, C continues and ESC exits.",
             "fixed_refresh_rate_expected_hz": EXPECTED_REFRESH_HZ,
@@ -488,6 +513,65 @@ def _run_startup_display_check(win) -> tuple[float, tuple[int, int], bool, bool]
             raise SystemExit("Display check: user chose exit.")
         mismatch_continued = True
     return measured, actual, spec_ok, mismatch_continued
+
+
+def _find_cedrus_port() -> str:
+    """Find the Cedrus FTDI serial port; fall back to the usual Linux name."""
+    if list_ports is not None:
+        for port in list_ports.comports():
+            if port.vid == CEDRUS_VID and port.pid == CEDRUS_PID:
+                return port.device
+    return "/dev/ttyUSB0"
+
+
+def _open_cedrus_box():
+    if serial is None:
+        raise SystemExit("pyserial is required for response box cedrus.")
+
+    port_name = _find_cedrus_port()
+    box = serial.Serial(port_name, baudrate=CEDRUS_BAUDRATE, timeout=0.001)
+    answer = b""
+
+    for _ in range(10):
+        box.reset_input_buffer()
+        box.write(b"_c1")
+        time.sleep(0.1)
+        answer = box.read(64)
+        if answer.startswith(b"_xid"):
+            print(f"Using response box cedrus on {port_name}.")
+            return box
+
+    box.close()
+    raise SystemExit(f"No response box cedrus found on {port_name}. Got: {answer!r}")
+
+
+def _wait_for_cedrus_response(box, clock, max_wait):
+    buffer = b""
+    start = clock.getTime()
+
+    while clock.getTime() - start < max_wait:
+        escape_keys = event.getKeys(keyList=["escape"], timeStamped=clock)
+        if escape_keys:
+            return ("escape", escape_keys[0][1])
+
+        buffer += box.read(box.in_waiting or 1)
+
+        while b"k" in buffer:
+            packet_start = buffer.find(b"k")
+            buffer = buffer[packet_start:]
+            if len(buffer) < 6:
+                break
+
+            packet = buffer[:6]
+            buffer = buffer[6:]
+            info = packet[1]
+            button = str((info & 0xE0) >> 5 or 8)
+            button_down = bool(info & 0x10)
+
+            if button_down and button in CEDRUS_BUTTON_TO_COLOR_ID:
+                return (button, clock.getTime())
+
+    return None
 
 
 # Create window matching paradigm display settings
@@ -796,6 +880,7 @@ else:
 
 # Create clock for response time measurement
 clock = core.Clock()
+cedrus_box = _open_cedrus_box() if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS else None
 
 # Initialize cumulative reward and trial data log
 cum_reward = 0.0
@@ -900,11 +985,13 @@ for trial_in_session in range(total_trials):
     if show_color_map:
         for rect in color_response_squares:
             rect.draw()
+    if cedrus_box is not None:
+        cedrus_box.reset_input_buffer()
     win.flip()
     cue_time = clock.getTime()
 
     # -------------------------------------------------------------------------
-    # Wait for key response (D/C/K/M or escape). Screen stays at FLIP B until then.
+    # Wait for response. Screen stays at FLIP B until response or timeout.
     # -------------------------------------------------------------------------
     rewards_at_positions = [r for r in position_to_reward.values() if r is not None]
     max_reward = max(rewards_at_positions) if rewards_at_positions else 0
@@ -928,7 +1015,11 @@ for trial_in_session in range(total_trials):
         actual_reward = position_to_reward.get(best_pos) or 0
     else:
         event.clearEvents()
-        keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
+        if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+            cedrus_response = _wait_for_cedrus_response(cedrus_box, clock, MAX_WAIT_TIME)
+            keys = [cedrus_response] if cedrus_response else None
+        else:
+            keys = event.waitKeys(keyList=response_keys + ['escape'], maxWait=MAX_WAIT_TIME, timeStamped=clock)
 
     if keys and not DEBUG_CONFIG["enabled"]:
         pressed_key = keys[0][0]
@@ -943,8 +1034,12 @@ for trial_in_session in range(total_trials):
             trial_index += 1
             continue
         rt = (response_time - cue_time) * 1000
-        selected_position = response_keys.index(pressed_key)
-        selected_color = selected_position + 1  # color pressed (1–4)
+        if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+            selected_color = CEDRUS_BUTTON_TO_COLOR_ID[pressed_key]
+            selected_position = selected_color - 1
+        else:
+            selected_position = response_keys.index(pressed_key)
+            selected_color = selected_position + 1  # color pressed (1–4)
         # Find position with that color; reward = position_to_reward[that_pos] (0 if None)
         pos_with_color = next((p for p in range(4) if position_to_color_id.get(p) == selected_color), None)
         actual_reward = (position_to_reward.get(pos_with_color) or 0) if pos_with_color is not None else 0
@@ -1049,6 +1144,8 @@ if completed_normally:
     win.flip()
     event.waitKeys()
 
+if cedrus_box is not None:
+    cedrus_box.close()
 win.close()
 core.quit()
 
