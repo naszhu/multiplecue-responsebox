@@ -91,7 +91,7 @@ TRIAL_START_JITTER_MAX = 5.0
 FIRST_WARMUP_TRIALS = 4
 OTHER_WARMUP_TRIALS = 2
 FEEDBACK_WAIT_TIME = 1.5
-REWARD_MONEY_FACTOR = 0.1
+REWARD_MONEY_FACTOR = 0.05
 RESPONSE_DEADLINE = 2.0  # seconds, match paradigm ResponseDeadline
 
 # Stimulus colors RGB (-1 to 1): Red, Green, Blue, Yellow
