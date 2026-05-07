@@ -54,6 +54,7 @@ SELF_MADE_PIN_TO_COLOR_ID = {"6": 1, "7": 2, "8": 4, "9": 3}
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
 CODE_VERSION = "v2-2026-05-07"
+COLOR_KEY_MAPPING = "rgby"
 MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experimental config.
 # Explicit cue-condition labels used in output. The trial generator chooses from
 # these configured conditions and writes the configured label directly.
@@ -305,6 +306,7 @@ def _build_trial_row(
         "ExperimentNumber": EXPERIMENT_NUMBER,
         "CodeVersion": CODE_VERSION,
         "ColorMapLayout": COLOR_MAP_LAYOUT,
+        "ColorKeyMapping": COLOR_KEY_MAPPING,
         "ResponseDevice": RESPONSE_DEVICE,
         "Subject": PARTICIPANT,
         "Handedness": HANDEDNESS,
@@ -357,6 +359,7 @@ DAT_COLUMN_DESCRIPTIONS = {
     "ExperimentNumber": "Numeric experiment ID constant.",
     "CodeVersion": "Experiment code version configured at the top of the script.",
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
+    "ColorKeyMapping": "Four-character response-color mapping string. Current fixed value rgby means red, green, blue, yellow.",
     "ResponseDevice": "Response input device used for this run: keyboard, response_box_cedrus, or self-made-response-box.",
     "Subject": "Participant ID from the session dialog.",
     "Handedness": "Participant handedness from the session dialog.",
@@ -471,6 +474,14 @@ def _build_metadata(
             "code_version": CODE_VERSION,
             "exp_start_time": exp_start_time_str,
             "debug_config_enabled": debug_on,
+            "color_key_mapping": COLOR_KEY_MAPPING,
+            "color_key_mapping_description": (
+                "Current fixed mapping is rgby: red, green, blue, yellow. "
+                "For keyboard, rgby corresponds to keys d, c, k, m. "
+                "For response_box_cedrus, rgby corresponds to the horizontal buttons from left to right. "
+                "For self-made-response-box, rgby corresponds to left middle finger, left index finger, "
+                "right middle finger, right index finger."
+            ),
             "subject": PARTICIPANT,
             "age": AGE,
             "gender": GENDER,
