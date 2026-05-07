@@ -1004,7 +1004,6 @@ for trial_in_session in range(total_trials):
     if cedrus_box is not None:
         cedrus_box.write(b"e5")
         cedrus_box.flush()
-        cedrus_box.reset_input_buffer()
 
     # -------------------------------------------------------------------------
     # Wait for response. Screen stays at FLIP B until response or timeout.
