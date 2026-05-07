@@ -31,7 +31,7 @@ except ImportError:
 logging.console.setLevel(logging.DEBUG)
 # Centralized debug switches. Add new toggles here as needed.
 DEBUG_CONFIG = {
-    "enabled": False,
+    "enabled": True,
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
     "auto_advance_instructions": False,
     "auto_respond": True,
@@ -39,11 +39,17 @@ DEBUG_CONFIG = {
     "full_screen": True,  # Toggle fullscreen quickly during testing
 }
 # Default monitor shown in the initial session dialog.
-DEFAULT_MONITOR_NAME = "room1_a1"
 RESPONSE_DEVICE_KEYBOARD = "keyboard"
 RESPONSE_DEVICE_CEDRUS = "response_box_cedrus"
 RESPONSE_DEVICE_SELF_MADE = "self-made-response-box"
+
+############################# TO MODIFY BELOW
+DEFAULT_PARTICIPANT = "tests0"
+DEFAULT_MONITOR_NAME = "room1_a1"
 DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_SELF_MADE
+############################# TO MODIFY ABOVE
+CODE_VERSION = "v2-2026-05-07"
+
 DEFAULT_COLOR_MAP_LAYOUT = "horizontal" if DEFAULT_RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS else "keyboard"
 CEDRUS_VID = 0x0403
 CEDRUS_PID = 0x6001
@@ -53,7 +59,6 @@ SELF_MADE_PIN_TO_COLOR_ID = {"6": 1, "7": 2, "8": 4, "9": 3}
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
-CODE_VERSION = "v2-2026-05-07"
 COLOR_KEY_MAPPING = "rgby"
 MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experimental config.
 # Explicit cue-condition labels used in output. The trial generator chooses from
@@ -178,7 +183,7 @@ NUM_POSITIONS = 4
 
 # Session dialog: run one session per launch (6+ uses experimental config: 8 blocks × 50 trials)
 session_dlg = gui.Dlg(title="CCRP Session")
-session_dlg.addField("Participant", initial="1")
+session_dlg.addField("Participant", initial=DEFAULT_PARTICIPANT)
 session_dlg.addField("Session", initial=1)
 session_dlg.addField("Age", initial="")
 session_dlg.addField("Gender", initial="NA")
