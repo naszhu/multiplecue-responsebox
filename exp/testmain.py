@@ -37,7 +37,7 @@ RESPONSE_DEVICE_SELF_MADE = "self-made-response-box"
 
 ############################# TO MODIFY BELOW
 DEBUG_CONFIG = {
-    "enabled": True,
+    "enabled": False,
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
     "auto_advance_instructions": False,
     "auto_respond": True,
@@ -45,9 +45,9 @@ DEBUG_CONFIG = {
     "short_feedback": True,
     "full_screen": True,  # Toggle fullscreen quickly during testing
 }
-DEFAULT_PARTICIPANT = "tests0"
-DEFAULT_MONITOR_NAME = "room1_a1"
-DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_SELF_MADE
+DEFAULT_PARTICIPANT = "3"
+DEFAULT_MONITOR_NAME = "room1_a4"
+DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_CEDRUS
 ############################# TO MODIFY ABOVE
 CODE_VERSION = "v2-2026-05-07"
 
@@ -970,6 +970,8 @@ def _load_session_instruction(session: int) -> str:
 # Presented: Session-specific instruction text 
 # Waits for: Space key before continuing
 instructions.setText(_load_session_instruction(SESSION))
+if SESSION == 1:
+    instructions.height = 0.4
 instructions.draw()
 win.flip()
 if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
@@ -1282,4 +1284,3 @@ if serial_response_box is not None:
     serial_response_box.close()
 win.close()
 core.quit()
-
