@@ -1036,59 +1036,85 @@ def _load_burnin_instruction() -> str:
     raise SystemExit(f"Instruction file not found: {path}")
 
 
-def _show_instruction_screen(text: str, *, use_session1_height: bool = False) -> None:
+def _confirm_exit_or_continue() -> bool:
+    """After ESC: return True if user confirms exit (second ESC), False to continue."""
+    esc_confirm_text.draw()
+    win.flip()
+    keys = event.waitKeys(keyList=["escape", "space"])
+    return bool(keys and keys[0] == "escape")
+
+
+def _wait_space_or_exit() -> bool:
+    """Wait for space to continue. Return False if user exits via double ESC."""
+    if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
+        core.wait(DEBUG_CONFIG["trial_duration"])
+        return True
+    while True:
+        keys = event.waitKeys(keyList=["space", "escape"])
+        if not keys:
+            continue
+        if keys[0] == "space":
+            return True
+        if keys[0] == "escape" and _confirm_exit_or_continue():
+            return False
+    return True
+
+
+def _show_instruction_screen(text: str, *, use_session1_height: bool = False) -> bool:
+    """Show instruction screen. Return False if user exits via ESC."""
     instructions.setText(text)
     instructions.height = 0.4 if use_session1_height else INSTRUCTION_LETTER_SIZE_DEG
     instructions.draw()
     win.flip()
-    if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
-        core.wait(DEBUG_CONFIG["trial_duration"])
-    else:
-        event.waitKeys(keyList=["space"])
+    return _wait_space_or_exit()
+
 
 # =============================================================================
 # FLIP 1: INSTRUCTIONS SCREEN
 # =============================================================================
 # Burn-in: burn-in instruction first; session instruction shown after burn-in block.
 # No burn-in: session instruction only.
+completed_normally = True
 if INCLUDE_BURNIN_BLOCK:
-    _show_instruction_screen(_load_burnin_instruction())
+    if not _show_instruction_screen(_load_burnin_instruction()):
+        completed_normally = False
 else:
-    _show_instruction_screen(
+    if not _show_instruction_screen(
         _load_session_instruction(SESSION),
         use_session1_height=(SESSION == 1),
-    )
+    ):
+        completed_normally = False
 
-# Create clock for response time measurement
-clock = core.Clock()
 serial_response_box = None
-simulate_response_box = (
-    DEBUG_CONFIG["enabled"]
-    and DEBUG_CONFIG["auto_respond"]
-    and DEBUG_CONFIG.get("simulate_response_box", True)
-    and RESPONSE_DEVICE in (RESPONSE_DEVICE_CEDRUS, RESPONSE_DEVICE_SELF_MADE)
-)
-if simulate_response_box:
-    print(f"DEBUG: simulating {RESPONSE_DEVICE}; serial response box will not be opened.")
-elif RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
-    serial_response_box = _open_cedrus_box()
-elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
-    serial_response_box = _open_self_made_response_box()
+if completed_normally:
+    # Create clock for response time measurement
+    clock = core.Clock()
+    simulate_response_box = (
+        DEBUG_CONFIG["enabled"]
+        and DEBUG_CONFIG["auto_respond"]
+        and DEBUG_CONFIG.get("simulate_response_box", True)
+        and RESPONSE_DEVICE in (RESPONSE_DEVICE_CEDRUS, RESPONSE_DEVICE_SELF_MADE)
+    )
+    if simulate_response_box:
+        print(f"DEBUG: simulating {RESPONSE_DEVICE}; serial response box will not be opened.")
+    elif RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+        serial_response_box = _open_cedrus_box()
+    elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
+        serial_response_box = _open_self_made_response_box()
 
-# Initialize cumulative reward and trial data log
-cum_reward = 0.0
-trial_index = 0
-out_dir = _out_dir
-out_dir.mkdir(parents=True, exist_ok=True)
-out_trials_path = _out_trials_path
-out_metadata_path = _out_metadata_path
-print(f"Trial data will be saved to: {out_trials_path}")
-print(f"Metadata will be saved to: {out_metadata_path}")
-first_trial_save = True  # Write header on first trial
-completed_normally = True
-exp_start_time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-csv_columns = None
-session_start_perf = time.perf_counter()
+    # Initialize cumulative reward and trial data log
+    cum_reward = 0.0
+    trial_index = 0
+    out_dir = _out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_trials_path = _out_trials_path
+    out_metadata_path = _out_metadata_path
+    print(f"Trial data will be saved to: {out_trials_path}")
+    print(f"Metadata will be saved to: {out_metadata_path}")
+    first_trial_save = True  # Write header on first trial
+    exp_start_time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    csv_columns = None
+    session_start_perf = time.perf_counter()
 
 # =============================================================================
 # TRIAL LOOP
@@ -1099,15 +1125,17 @@ session_start_perf = time.perf_counter()
 #   FLIP C: Feedback (reward, RT, etc.)
 prev_block = None
 
-for trial_in_session in range(total_trials):
+for trial_in_session in range(total_trials if completed_normally else 0):
     trial_data = trial_data_list[trial_index]
     current_block = trial_data["block"]
     if prev_block is not None and current_block != prev_block:
         if prev_block == BURNIN_BLOCK_NUMBER and current_block == 1:
-            _show_instruction_screen(
+            if not _show_instruction_screen(
                 _load_session_instruction(SESSION),
                 use_session1_height=(SESSION == 1),
-            )
+            ):
+                completed_normally = False
+                break
         else:
             block_break_text.setText(
                 f"End of Block {prev_block}.\n\n"
@@ -1116,10 +1144,9 @@ for trial_in_session in range(total_trials):
             )
             block_break_text.draw()
             win.flip()
-            if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
-                core.wait(DEBUG_CONFIG["trial_duration"])
-            else:
-                event.waitKeys(keyList=["space"])
+            if not _wait_space_or_exit():
+                completed_normally = False
+                break
 
     position_to_color_id = trial_data["position_to_color_id"]
     position_to_reward = trial_data["position_to_reward"]
@@ -1235,10 +1262,7 @@ for trial_in_session in range(total_trials):
         pressed_key = keys[0][0]
         response_time = keys[0][1]
         if pressed_key == 'escape':
-            esc_confirm_text.draw()
-            win.flip()
-            k = event.waitKeys(keyList=['escape', 'space'])
-            if k[0] == 'escape':
+            if _confirm_exit_or_continue():
                 completed_normally = False
                 break
             trial_index += 1
