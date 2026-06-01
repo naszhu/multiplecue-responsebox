@@ -185,6 +185,7 @@ NUM_POSITIONS = 4
 
 
 # Session dialog: run one session per launch (6+ uses experimental config: 8 blocks × 50 trials)
+PARTICIPATION_DAY_LABEL_TO_NUM = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4}
 session_dlg = gui.Dlg(title="CCRP Session")
 session_dlg.addField("Participant", initial=DEFAULT_PARTICIPANT)
 session_dlg.addField("Session", initial=1)
@@ -195,9 +196,9 @@ session_dlg.addField(
 )
 session_dlg.addField(
     "Participation day",
-    initial="1",
-    choices=["1", "2", "3", "4"],
-    tip="Which day of participation is this (1st, 2nd, 3rd, or 4th)?",
+    initial="1st",
+    choices=["1st", "2nd", "3rd", "4th"],
+    tip="Which day of participation is this?",
 )
 session_dlg.addField("Age", initial="")
 session_dlg.addField("Gender", initial="NA")
@@ -228,7 +229,10 @@ SESSION = int(session_dlg.data[1])  # 1-based session number
 if SESSION < 1 or SESSION > MAX_SESSION:
     raise SystemExit(f"Session must be between 1 and {MAX_SESSION}.")
 FIRST_SESSION_OF_DAY = str(session_dlg.data[2]).strip().lower() == "yes"
-PARTICIPATION_DAY = int(session_dlg.data[3])
+_participation_day_label = str(session_dlg.data[3]).strip().lower()
+if _participation_day_label not in PARTICIPATION_DAY_LABEL_TO_NUM:
+    raise SystemExit(f"Invalid participation day: {session_dlg.data[3]!r}. Choose 1st, 2nd, 3rd, or 4th.")
+PARTICIPATION_DAY = PARTICIPATION_DAY_LABEL_TO_NUM[_participation_day_label]
 AGE = str(session_dlg.data[4]).strip() or "NA"
 GENDER = str(session_dlg.data[5]).strip() or "NA"
 HANDEDNESS = str(session_dlg.data[6]).strip() or "NA"
