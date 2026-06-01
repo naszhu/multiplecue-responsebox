@@ -37,7 +37,7 @@ RESPONSE_DEVICE_SELF_MADE = "self-made-response-box"
 
 ############################# TO MODIFY BELOW
 DEBUG_CONFIG = {
-    "enabled": True,
+    "enabled": False,
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
     "auto_advance_instructions": False,
     "auto_respond": True,
@@ -45,23 +45,48 @@ DEBUG_CONFIG = {
     "short_feedback": True,
     "full_screen": True,  # Toggle fullscreen quickly during testing
 }
-DEFAULT_PARTICIPANT = "tests0"
-DEFAULT_MONITOR_NAME = "room1_a1"
+DEFAULT_PARTICIPANT = "3"
+DEFAULT_MONITOR_NAME = "room1_a4"
 DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_SELF_MADE
+# Physical unit ID: KB=keyboard, RB=Cedrus response box, SRB1–SRB3=self-made boxes.
+DEVICE_NAME_CHOICES = ["KB", "RB", "SRB1", "SRB2", "SRB3"]
+DEFAULT_DEVICE_NAME = "SRB1"
 ############################# TO MODIFY ABOVE
-CODE_VERSION = "v2-2026-05-07"
+CODE_VERSION = "v3-2026-05-30"
+
+############################# COUNTERBALANCE / DATA POLICY
+PRODUCTION_START_PARTICIPANT = 8  # IDs 1–7 pilot → rgby; ID 8+ mapping from CSV
+MAX_PARTICIPANT_ID = 100
+PARTICIPANT_CHOICES = ["test"] + [str(i) for i in range(1, MAX_PARTICIPANT_ID + 1)]
+EXP_DIR = Path(__file__).resolve().parent
+PARTICIPANT_COLOR_KEY_MAPPING_PATH = EXP_DIR / "participant_color_key_mapping.csv"
 
 DEFAULT_COLOR_MAP_LAYOUT = "horizontal" if DEFAULT_RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS else "keyboard"
 CEDRUS_VID = 0x0403
 CEDRUS_PID = 0x6001
 CEDRUS_BAUDRATE = 115200
-CEDRUS_BUTTON_TO_COLOR_ID = {"2": 1, "3": 2, "4": 3, "5": 4}
-SELF_MADE_PIN_TO_COLOR_ID = {"6": 1, "7": 2, "8": 4, "9": 3}
+CEDRUS_BUTTON_IDS = ["2", "3", "4", "5"]  # response slots 0–3 left to right
+SELF_MADE_PIN_IDS = ["6", "7", "9", "8"]  # response slots 0–3 left to right
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
-COLOR_KEY_MAPPING = "rgby"
+COLOR_LETTER_TO_ID = {"r": 1, "g": 2, "b": 3, "y": 4}
+COLOR_ID_TO_NAME = {1: "RED", 2: "GREEN", 3: "BLUE", 4: "YELLOW"}
+ALL_COLOR_KEY_MAPPINGS = sorted({"".join(p) for p in permutations("rgby")})
+COLOR_KEY_MAPPING_AUTO_CHOICE = "as assigned"
+COLOR_KEY_MAPPING_DIALOG_CHOICES = [COLOR_KEY_MAPPING_AUTO_CHOICE] + ALL_COLOR_KEY_MAPPINGS
 MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experimental config.
+
+# Set after session dialog (numeric lookup from CSV; test may randomize).
+COLOR_KEY_MAPPING = "rgby"
+COLOR_KEY_MAPPING_ASSIGNED = "rgby"
+COLOR_KEY_MAPPING_OVERRIDDEN = False
+SLOT_TO_COLOR_ID = [1, 2, 3, 4]
+CEDRUS_BUTTON_TO_COLOR_ID = {}
+SELF_MADE_PIN_TO_COLOR_ID = {}
+REPEAT_DATA_NOTE = ""
+REPEAT_REASON = ""
+DATA_FILE_STEM = ""
 # Explicit cue-condition labels used in output. The trial generator chooses from
 # these configured conditions and writes the configured label directly.
 REWARD_CONDITIONS = [
@@ -98,6 +123,8 @@ TRIAL_START_JITTER_MAX = 5.0
 # Warm-up trials per block (match paradigm: FirstWarmUpTrials, OtherWarmUpTrials)
 FIRST_WARMUP_TRIALS = 4
 OTHER_WARMUP_TRIALS = 2
+BURNIN_TRIALS_PER_BLOCK = 20
+BURNIN_BLOCK_NUMBER = 0
 FEEDBACK_WAIT_TIME = 1.5
 REWARD_MONEY_FACTOR = 0.05
 RESPONSE_DEADLINE = 2.0  # seconds, match paradigm ResponseDeadline
@@ -175,26 +202,204 @@ REFRESH_RATE_TOLERANCE_HZ = 10
 # Possible reward values (points 1–4). 
 REWARD_VALUES = [1, 2, 3, 4]
 
-# Color-to-key mapping: Red→D, Green→C, Blue→K, Yellow→M
-# Position i has fixed color: 0=Red, 1=Green, 2=Blue, 3=Yellow (from STIMULUS_TARGET_COLORS_RGB)
-COLOR_KEYS = ['d', 'c', 'k', 'm']  # key for position/color 0,1,2,3
+# Physical response keys per slot 0–3 (D, C, K, M). Color at each slot comes from COLOR_KEY_MAPPING.
+COLOR_KEYS = ['d', 'c', 'k', 'm']
 
 NUM_POSITIONS = 4
 
 
+def _load_participant_color_key_mapping_table() -> dict[str, str]:
+    """Read committed assignment table (read-only; never written by this program)."""
+    path = PARTICIPANT_COLOR_KEY_MAPPING_PATH
+    if not path.is_file():
+        raise SystemExit(f"Missing color-key mapping table: {path}")
+    table = {}
+    with open(path, newline="", encoding="utf-8") as fp:
+        reader = csv.DictReader(fp)
+        if reader.fieldnames is None or "participant_id" not in reader.fieldnames or "color_key_mapping" not in reader.fieldnames:
+            raise SystemExit(f"Invalid mapping table columns in {path}")
+        for row in reader:
+            pid = str(row["participant_id"]).strip()
+            mapping = str(row["color_key_mapping"]).strip().lower()
+            if mapping not in ALL_COLOR_KEY_MAPPINGS:
+                raise SystemExit(f"Invalid mapping {mapping!r} for participant {pid} in {path}")
+            table[pid] = mapping
+    for p in range(1, MAX_PARTICIPANT_ID + 1):
+        if str(p) not in table:
+            raise SystemExit(f"Mapping table missing participant_id {p} in {path}")
+    return table
+
+
+PARTICIPANT_COLOR_KEY_MAPPING = _load_participant_color_key_mapping_table()
+
+
+def _slot_color_ids(mapping: str) -> list[int]:
+    mapping = mapping.lower()
+    return [COLOR_LETTER_TO_ID[c] for c in mapping]
+
+
+def _validate_color_key_mapping(mapping: str) -> str:
+    mapping = str(mapping).strip().lower()
+    if mapping not in ALL_COLOR_KEY_MAPPINGS:
+        raise SystemExit(f"Invalid color key mapping: {mapping!r}")
+    return mapping
+
+
+def _assigned_color_key_mapping(participant: str) -> str:
+    if participant == "test":
+        return random.choice(ALL_COLOR_KEY_MAPPINGS)
+    return PARTICIPANT_COLOR_KEY_MAPPING[participant]
+
+
+def _resolve_color_key_mapping_from_dialog(
+    participant: str, dialog_choice: str
+) -> tuple[str, str, bool]:
+    """Return (assigned_mapping, used_mapping, overridden)."""
+    assigned = _assigned_color_key_mapping(participant)
+    choice = str(dialog_choice).strip()
+    if choice.lower() == COLOR_KEY_MAPPING_AUTO_CHOICE.lower():
+        return assigned, assigned, False
+    used = _validate_color_key_mapping(choice)
+    return assigned, used, used != assigned
+
+
+def _build_device_color_maps(mapping: str) -> tuple[list[int], dict[str, int], dict[str, int]]:
+    slot_to_color_id = _slot_color_ids(mapping)
+    cedrus_button_to_color_id = {
+        CEDRUS_BUTTON_IDS[i]: slot_to_color_id[i] for i in range(NUM_POSITIONS)
+    }
+    self_made_pin_to_color_id = {
+        SELF_MADE_PIN_IDS[i]: slot_to_color_id[i] for i in range(NUM_POSITIONS)
+    }
+    return slot_to_color_id, cedrus_button_to_color_id, self_made_pin_to_color_id
+
+
+def _slot_color_names(mapping: str) -> list[str]:
+    return [COLOR_ID_TO_NAME[cid] for cid in _slot_color_ids(mapping)]
+
+
+def _response_key_for_color_id(color_id: int, slot_to_color_id: list[int]) -> str:
+    slot = slot_to_color_id.index(color_id)
+    return COLOR_KEYS[slot]
+
+
+def _color_to_key_mapping_metadata(mapping: str, response_device: str) -> dict[str, str]:
+    names = _slot_color_names(mapping)
+    slot_to_color_id = _slot_color_ids(mapping)
+    if response_device == RESPONSE_DEVICE_KEYBOARD:
+        labels = [k.upper() for k in COLOR_KEYS]
+    elif response_device == RESPONSE_DEVICE_CEDRUS:
+        labels = [f"button_{b}" for b in CEDRUS_BUTTON_IDS]
+    else:
+        labels = [f"pin_{p}" for p in SELF_MADE_PIN_IDS]
+    return {
+        COLOR_ID_TO_NAME[slot_to_color_id[i]]: labels[i] for i in range(NUM_POSITIONS)
+    }
+
+
+def _color_key_mapping_description(mapping: str, response_device: str) -> str:
+    names = _slot_color_names(mapping)
+    order = ", ".join(names)
+    if response_device == RESPONSE_DEVICE_KEYBOARD:
+        keys = ", ".join(k.upper() for k in COLOR_KEYS)
+        return (
+            f"Mapping {mapping}: slot colors left-to-right are {order} on keys {keys} (D, C, K, M)."
+        )
+    if response_device == RESPONSE_DEVICE_CEDRUS:
+        return (
+            f"Mapping {mapping}: Cedrus buttons left-to-right are {order}."
+        )
+    return (
+        f"Mapping {mapping}: self-made pins left-to-right (6,7,9,8) are {order}."
+    )
+
+
+def _apply_color_mapping_to_instruction(text: str, mapping: str) -> str:
+    c0, c1, c2, c3 = _slot_color_names(mapping)
+    return text.format(C0=c0, C1=c1, C2=c2, C3=c3)
+
+
+def _resolve_data_output_paths(
+    participant: str, session: int, out_dir: Path
+) -> tuple[Path, Path, str, str, str]:
+    """Return trials path, metadata path, file stem, repeat note, repeat reason (empty if not repeat)."""
+    base_stem = f"CCRP_subj{participant}_ses{session}"
+    trials_path = (out_dir / f"{base_stem}_trials.csv").resolve()
+    metadata_path = (out_dir / f"{base_stem}_metadata.json").resolve()
+
+    if participant == "test":
+        return trials_path, metadata_path, base_stem, "", ""
+
+    if not trials_path.exists() and not metadata_path.exists():
+        return trials_path, metadata_path, base_stem, "", ""
+
+    repeat_dlg = gui.Dlg(title="Participant data already exists")
+    repeat_dlg.addText(
+        f"Data already exists for participant {participant}, session {session}.\n\n"
+        "To continue anyway, enter a reason below and click OK."
+    )
+    repeat_dlg.addField("Reason (required)", initial="")
+    repeat_dlg.show()
+    if not repeat_dlg.OK:
+        raise SystemExit("Repeat run cancelled.")
+    reason = str(repeat_dlg.data[0]).strip()
+    if not reason:
+        raise SystemExit("A reason is required to overwrite existing participant data.")
+
+    suffix_n = 2
+    while True:
+        stem = f"{base_stem}({suffix_n})"
+        candidate_trials = (out_dir / f"{stem}_trials.csv").resolve()
+        candidate_meta = (out_dir / f"{stem}_metadata.json").resolve()
+        if not candidate_trials.exists() and not candidate_meta.exists():
+            note = f"this is a repeated data, reason is '{reason}'"
+            return candidate_trials, candidate_meta, stem, note, reason
+        suffix_n += 1
+
+
 # Session dialog: run one session per launch (6+ uses experimental config: 8 blocks × 50 trials)
+PARTICIPATION_DAY_LABEL_TO_NUM = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4}
 session_dlg = gui.Dlg(title="CCRP Session")
-session_dlg.addField("Participant", initial=DEFAULT_PARTICIPANT)
+session_dlg.addField(
+    "Participant",
+    initial=DEFAULT_PARTICIPANT if DEFAULT_PARTICIPANT in PARTICIPANT_CHOICES else "1",
+    choices=PARTICIPANT_CHOICES,
+)
+session_dlg.addText("— Participant: fill in the fields below —")
 session_dlg.addField("Session", initial=1)
+session_dlg.addField(
+    "First session of day?",
+    initial="yes",
+    choices=["yes", "no"],
+)
+session_dlg.addField(
+    "Participation day",
+    initial="1st",
+    choices=["1st", "2nd", "3rd", "4th"],
+    tip="Which day of participation is this?",
+)
 session_dlg.addField("Age", initial="")
 session_dlg.addField("Gender", initial="NA")
 session_dlg.addField("Handedness", initial="right", choices=["right", "left", "ambidextrous", "other"])
 session_dlg.addField("Color vision", initial="normal", choices=["normal", "not normal", "unknown"])
 session_dlg.addField("Eye vision", initial="normal", choices=["normal", "corrected", "not normal", "unknown"])
+session_dlg.addText("— Experimenter only: do not change unless instructed —")
+session_dlg.addField(
+    "Color key mapping",
+    initial=COLOR_KEY_MAPPING_AUTO_CHOICE,
+    choices=COLOR_KEY_MAPPING_DIALOG_CHOICES,
+    tip="Default uses table assignment (random for test). Pick a specific mapping only to override.",
+)
 session_dlg.addField(
     "Response device",
     initial=DEFAULT_RESPONSE_DEVICE,
     choices=[RESPONSE_DEVICE_KEYBOARD, RESPONSE_DEVICE_CEDRUS, RESPONSE_DEVICE_SELF_MADE],
+)
+session_dlg.addField(
+    "Device name",
+    initial=DEFAULT_DEVICE_NAME,
+    choices=DEVICE_NAME_CHOICES,
+    tip="Physical unit: KB=keyboard, RB=Cedrus box, SRB1–SRB3=self-made response boxes.",
 )
 session_dlg.addField(
     "Color map layout",
@@ -211,40 +416,50 @@ session_dlg.show()
 if not session_dlg.OK:
     raise SystemExit("Session dialog cancelled")
 PARTICIPANT = str(session_dlg.data[0]).strip()
+if PARTICIPANT not in PARTICIPANT_CHOICES:
+    raise SystemExit(f"Participant must be 'test' or an integer from 1 to {MAX_PARTICIPANT_ID}.")
 SESSION = int(session_dlg.data[1])  # 1-based session number
 if SESSION < 1 or SESSION > MAX_SESSION:
     raise SystemExit(f"Session must be between 1 and {MAX_SESSION}.")
-AGE = str(session_dlg.data[2]).strip() or "NA"
-GENDER = str(session_dlg.data[3]).strip() or "NA"
-HANDEDNESS = str(session_dlg.data[4]).strip() or "NA"
-COLOR_VISION = str(session_dlg.data[5]).strip() or "NA"
-EYE_VISION = str(session_dlg.data[6]).strip() or "NA"
-RESPONSE_DEVICE = session_dlg.data[7]
-COLOR_MAP_LAYOUT = session_dlg.data[8]  # "horizontal" or "keyboard"
-MONITOR_NAME = str(session_dlg.data[9]).strip() or MONITOR_NAME
-
-_out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
-_base_stem = f"CCRP_subj{PARTICIPANT}_ses{SESSION}"
-_out_trials_path = (_out_dir / f"{_base_stem}_trials.csv").resolve()
-_out_metadata_path = (_out_dir / f"{_base_stem}_metadata.json").resolve()
-if _out_trials_path.exists() or _out_metadata_path.exists():
-    _dup_msg = (
-        f"Participant data already exists (participant {PARTICIPANT}, session {SESSION}).\n"
-        "Delete existing data or try another participant number."
+FIRST_SESSION_OF_DAY = str(session_dlg.data[2]).strip().lower() == "yes"
+_participation_day_label = str(session_dlg.data[3]).strip().lower()
+if _participation_day_label not in PARTICIPATION_DAY_LABEL_TO_NUM:
+    raise SystemExit(f"Invalid participation day: {session_dlg.data[3]!r}. Choose 1st, 2nd, 3rd, or 4th.")
+PARTICIPATION_DAY = PARTICIPATION_DAY_LABEL_TO_NUM[_participation_day_label]
+AGE = str(session_dlg.data[4]).strip() or "NA"
+GENDER = str(session_dlg.data[5]).strip() or "NA"
+HANDEDNESS = str(session_dlg.data[6]).strip() or "NA"
+COLOR_VISION = str(session_dlg.data[7]).strip() or "NA"
+EYE_VISION = str(session_dlg.data[8]).strip() or "NA"
+COLOR_KEY_MAPPING_ASSIGNED, COLOR_KEY_MAPPING, COLOR_KEY_MAPPING_OVERRIDDEN = (
+    _resolve_color_key_mapping_from_dialog(PARTICIPANT, session_dlg.data[9])
+)
+SLOT_TO_COLOR_ID, CEDRUS_BUTTON_TO_COLOR_ID, SELF_MADE_PIN_TO_COLOR_ID = _build_device_color_maps(
+    COLOR_KEY_MAPPING
+)
+RESPONSE_DEVICE = session_dlg.data[10]
+DEVICE_NAME = str(session_dlg.data[11]).strip()
+if DEVICE_NAME not in DEVICE_NAME_CHOICES:
+    raise SystemExit(
+        f"Device name must be one of {DEVICE_NAME_CHOICES!r}; got {DEVICE_NAME!r}."
     )
-    if hasattr(gui, "popupError"):
-        gui.popupError(_dup_msg, title="Participant data already exists")
-    else:
-        # Compatibility fallback for older PsychoPy versions.
-        _error_dlg = gui.Dlg(title="Participant data already exists")
-        _error_dlg.addText(_dup_msg)
-        _error_dlg.show()
-    raise SystemExit("Data file already exists. Exiting after showing popup message.")
+COLOR_MAP_LAYOUT = session_dlg.data[12]  # "horizontal" or "keyboard"
+MONITOR_NAME = str(session_dlg.data[13]).strip() or MONITOR_NAME
+
+_out_dir = (EXP_DIR / "data_written").resolve()
+_out_trials_path, _out_metadata_path, DATA_FILE_STEM, REPEAT_DATA_NOTE, REPEAT_REASON = _resolve_data_output_paths(
+    PARTICIPANT, SESSION, _out_dir
+)
 
 
 def _session_config_idx(session: int) -> int:
     """Return config index for session (1-based). Session 6+ uses same config as session 6."""
     return min(session - 1, 5)
+
+
+def _should_include_burnin_block(session: int, first_session_of_day: bool, participation_day: int) -> bool:
+    """Burn-in block: session 6+, first session of day, participation day > 1."""
+    return session >= 6 and first_session_of_day and participation_day > 1
 
 
 def _build_trial_row(
@@ -270,9 +485,13 @@ def _build_trial_row(
     trial_condition_label,
     num_cues,
     warm_up=0,
+    burn_in_block=0,
+    participation_day=1,
+    first_session_of_day=0,
     trial_start_jitter_time_ms=0,
     trial_wall_clock_str="",
     session_elapsed_sec=0.0,
+    trial_note="",
 ):
     """Build a trial data row """
     # Color layout: 4-digit strings (position 0..3). Rewards from position_to_reward.
@@ -314,6 +533,7 @@ def _build_trial_row(
         "ColorMapLayout": COLOR_MAP_LAYOUT,
         "ColorKeyMapping": COLOR_KEY_MAPPING,
         "ResponseDevice": RESPONSE_DEVICE,
+        "DeviceName": DEVICE_NAME,
         "Subject": PARTICIPANT,
         "Handedness": HANDEDNESS,
         "ColorVision": COLOR_VISION,
@@ -322,6 +542,9 @@ def _build_trial_row(
         "Block": block,
         "Trial": trial_index + 1,
         "WarmUpTrial": warm_up,
+        "BurnInBlock": burn_in_block,
+        "ParticipationDay": participation_day,
+        "FirstSessionOfDay": first_session_of_day,
         "CueCondition": trial_condition_label,
         "NumCues": num_cues,
         "TrialStartJitterTime": round(trial_start_jitter_time_ms, 2),  # ms
@@ -355,7 +578,7 @@ def _build_trial_row(
         "EndTrialTime": round(end_trial_time * 1000, 2),  # ms
         "TrialWallClockTime": trial_wall_clock_str,
         "SessionElapsedSec": round(session_elapsed_sec, 3),
-        "Note": "",
+        "Note": trial_note,
     }
 
 
@@ -365,16 +588,20 @@ DAT_COLUMN_DESCRIPTIONS = {
     "ExperimentNumber": "Numeric experiment ID constant.",
     "CodeVersion": "Experiment code version configured at the top of the script.",
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
-    "ColorKeyMapping": "Four-character response-color mapping string. Current fixed value rgby means red, green, blue, yellow.",
+    "ColorKeyMapping": "Four-character mapping for response slots 0–3 left-to-right: each letter is r, g, b, or y.",
     "ResponseDevice": "Response input device used for this run: keyboard, response_box_cedrus, or self-made-response-box.",
+    "DeviceName": "Physical response unit ID from the session dialog: KB, RB, SRB1, SRB2, or SRB3.",
     "Subject": "Participant ID from the session dialog.",
     "Handedness": "Participant handedness from the session dialog.",
     "ColorVision": "Participant color vision status from the session dialog.",
     "EyeVision": "Participant eye vision status from the session dialog.",
     "Session": "Session index written as 0-based internal index plus 1 (matches dialog session number).",
-    "Block": "Block number (1-based) within the session.",
+    "Block": "Block number within the session; 0 = burn-in block when present, otherwise 1-based session blocks.",
     "Trial": "Trial index within the session (1-based, increments across warmup and main).",
     "WarmUpTrial": "1 if warmup trial, 0 if main trial.",
+    "BurnInBlock": "1 if trial belongs to the optional burn-in re-acclimation block (block 0); 0 otherwise.",
+    "ParticipationDay": "Participant's self-reported day of participation (1–4) from the session dialog.",
+    "FirstSessionOfDay": "1 if participant reported this as their first session of the day; 0 otherwise.",
     "CueCondition": "Label for reward-value combination among non-zero CueValues in this trial. Allowed conditions: (1), (2), (3), (4), (2,1), (3,1), (4,1), (3,2), (4,2), (4,3). Order is descending reward value and ignores location order.",
     "NumCues": "Count of cued stimulus locations this trial.",
     "TrialStartJitterTime": "Duration of fixation before stimulus onset (ms); actual drawn jitter or DEBUG substitute.",
@@ -415,6 +642,7 @@ def _build_metadata(
     n_trials_total: int,
     n_trials_per_block: int,
     total_warmup: int,
+    include_burnin_block: bool,
     cfg: dict,
     dat_columns: list[str],
 ) -> dict:
@@ -451,6 +679,14 @@ def _build_metadata(
             "feedback_duration_s": FEEDBACK_WAIT_TIME,
             "warmup_trials_first_block": FIRST_WARMUP_TRIALS,
             "warmup_trials_other_blocks": OTHER_WARMUP_TRIALS,
+            "burnin_block_included": include_burnin_block,
+            "burnin_trials_per_block": BURNIN_TRIALS_PER_BLOCK if include_burnin_block else 0,
+            "burnin_block_number": BURNIN_BLOCK_NUMBER if include_burnin_block else None,
+            "burnin_eligibility_note": (
+                "Burn-in block included when session >= 6, first session of day, and participation day > 1."
+            ),
+            "participation_day": PARTICIPATION_DAY,
+            "first_session_of_day": "Y" if FIRST_SESSION_OF_DAY else "N",
             "blocks": n_blocks,
             "main_trials_per_block": n_trials_per_block,
             "total_warmup_trials": total_warmup,
@@ -461,7 +697,7 @@ def _build_metadata(
             "number_of_reward_conditions": n_reward_conds,
             "main_trials_per_reward_condition_per_block_balanced": reps_per_condition,
             "color_id_mapping_for_cues": {str(i + 1): color_names[i] for i in range(NUM_POSITIONS)},
-            "color_to_key_mapping": {color_names[i]: COLOR_KEYS[i].upper() for i in range(NUM_POSITIONS)},
+            "color_to_key_mapping": _color_to_key_mapping_metadata(COLOR_KEY_MAPPING, RESPONSE_DEVICE),
             "location_id_mapping": {
                 str(i + 1): {
                     "screen_location": location_names[i],
@@ -481,13 +717,16 @@ def _build_metadata(
             "exp_start_time": exp_start_time_str,
             "debug_config_enabled": debug_on,
             "color_key_mapping": COLOR_KEY_MAPPING,
-            "color_key_mapping_description": (
-                "Current fixed mapping is rgby: red, green, blue, yellow. "
-                "For keyboard, rgby corresponds to keys d, c, k, m. "
-                "For response_box_cedrus, rgby corresponds to the horizontal buttons from left to right. "
-                "For self-made-response-box, rgby corresponds to left middle finger, left index finger, "
-                "right middle finger, right index finger."
+            "color_key_mapping_assigned": COLOR_KEY_MAPPING_ASSIGNED,
+            "color_key_mapping_overridden": COLOR_KEY_MAPPING_OVERRIDDEN,
+            "color_key_mapping_table_path": str(PARTICIPANT_COLOR_KEY_MAPPING_PATH),
+            "production_start_participant": PRODUCTION_START_PARTICIPANT,
+            "color_key_mapping_description": _color_key_mapping_description(
+                COLOR_KEY_MAPPING, RESPONSE_DEVICE
             ),
+            "repeated_run": bool(REPEAT_DATA_NOTE),
+            "repeat_reason": REPEAT_REASON,
+            "data_file_stem": DATA_FILE_STEM,
             "subject": PARTICIPANT,
             "age": AGE,
             "gender": GENDER,
@@ -501,9 +740,10 @@ def _build_metadata(
             "reward_money_factor": REWARD_MONEY_FACTOR,
             "full_screen": "Y" if DEBUG_CONFIG.get("full_screen", True) else "N",
             "response_device": RESPONSE_DEVICE,
+            "device_name": DEVICE_NAME,
             "response_keys": [k.upper() for k in response_keys],
-            "response_box_cedrus_buttons": CEDRUS_BUTTON_TO_COLOR_ID,
-            "self_made_response_box_pins": SELF_MADE_PIN_TO_COLOR_ID,
+            "response_box_cedrus_buttons": dict(CEDRUS_BUTTON_TO_COLOR_ID),
+            "self_made_response_box_pins": dict(SELF_MADE_PIN_TO_COLOR_ID),
             "response_deadline": RESPONSE_DEADLINE,
             "startup_display_check_description": "After Window open, compare actual win.size to WIN_SIZE_PIX and win.getActualFrameRate() to expected Hz; on mismatch, C continues and ESC exits.",
             "fixed_refresh_rate_expected_hz": EXPECTED_REFRESH_HZ,
@@ -688,6 +928,7 @@ win = visual.Window(
     multiSample=MULTI_SAMPLE,
     numSamples=NUM_SAMPLES,
 )
+win.setMouseVisible(False)
 
 MEASURED_REFRESH_RATE, ACTUAL_WIN_SIZE_PIX, DISPLAY_CHECK_SPEC_OK, DISPLAY_CHECK_MISMATCH_CONTINUED = (
     _run_startup_display_check(win)
@@ -696,8 +937,6 @@ MEASURED_REFRESH_RATE, ACTUAL_WIN_SIZE_PIX, DISPLAY_CHECK_SPEC_OK, DISPLAY_CHECK
 # Define cue positions (4 locations, from POSITIONS_DEG)
 positions = POSITIONS_DEG
 
-# Response keys: color-to-key mapping (Red=D, Green=C, Blue=K, Yellow=M)
-# Position 0=Red, 1=Green, 2=Blue, 3=Yellow
 response_keys = COLOR_KEYS
 
 # Colors for each cue (from paradigm StimulusTargetColorsRGB)
@@ -760,14 +999,15 @@ def _color_map_positions(layout: str):
 
 color_map_positions = _color_map_positions(COLOR_MAP_LAYOUT)
 color_response_squares = []
-for i in range(NUM_POSITIONS):
+for slot_i in range(NUM_POSITIONS):
+    color_id = SLOT_TO_COLOR_ID[slot_i]
     rect = visual.Rect(
         win,
         width=RESPONSE_COLOR_SIZE_DEG,
         height=RESPONSE_COLOR_SIZE_DEG,
-        fillColor=STIMULUS_TARGET_COLORS_RGB[i],
+        fillColor=STIMULUS_TARGET_COLORS_RGB[color_id - 1],
         lineColor=None,
-        pos=color_map_positions[i],
+        pos=color_map_positions[slot_i],
         units=USE_UNITS,
     )
     color_response_squares.append(rect)
@@ -785,7 +1025,7 @@ n_trials_per_block = cfg["n_per_block"]
 n_warmup_first = FIRST_WARMUP_TRIALS
 n_warmup_other = OTHER_WARMUP_TRIALS
 total_warmup = n_warmup_first + (n_blocks - 1) * n_warmup_other
-total_trials = total_warmup + n_blocks * n_trials_per_block
+INCLUDE_BURNIN_BLOCK = _should_include_burnin_block(SESSION, FIRST_SESSION_OF_DAY, PARTICIPATION_DAY)
 
 
 def _pool_for_reward_condition(reward_condition: dict, cfg: dict) -> list:
@@ -858,42 +1098,62 @@ def _pool_for_reward_condition(reward_condition: dict, cfg: dict) -> list:
     return out
 
 
-def _build_trials(cfg: dict) -> list:
+def _build_trials(cfg: dict, *, include_burnin_block: bool = False) -> list:
     """Reward-value-balanced: each condition reps per block. Warm-up trials prepended per block (match paradigm)."""
     reward_conditions, n_blocks, n_per_block = cfg["reward_conditions"], cfg["n_blocks"], cfg["n_per_block"]
-    reps_per_condition = n_per_block // len(reward_conditions) #how many trials each condition repeats
+    reps_per_condition = n_per_block // len(reward_conditions)  # how many trials each condition repeats
     trial_pools = [_pool_for_reward_condition(reward_condition, cfg) for reward_condition in reward_conditions]
 
-    def _make_block():
-        block = [random.choice(pool) for pool in trial_pools for _ in range(reps_per_condition)]
+    def _make_block(reps: int):
+        block = [random.choice(pool) for pool in trial_pools for _ in range(reps)]
         random.shuffle(block)
         return block
 
     trials = []
+
+    if include_burnin_block:
+        burnin_reps = BURNIN_TRIALS_PER_BLOCK // len(reward_conditions)
+        burnin_block = _make_block(burnin_reps)
+        for i, t in enumerate(burnin_block):
+            trials.append({
+                **t,
+                "warm_up": 1,
+                "burn_in_block": 1,
+                "block": BURNIN_BLOCK_NUMBER,
+                "trial_in_block": i + 1,
+            })
+
     for block_idx in range(n_blocks):
         block_number = block_idx + 1
         n_warmup = FIRST_WARMUP_TRIALS if block_idx == 0 else OTHER_WARMUP_TRIALS
 
         # Warm-up: full block, take first N (match paradigm blockFunction + del WarmUpBlockData[N:])
-        warmup_block = _make_block()
+        warmup_block = _make_block(reps_per_condition)
         warmup_trials = warmup_block[:n_warmup]
 
         # Main block
-        main_block = _make_block()
-        # {
-        # "position_to_color_id": {0: 3, 1: 1, 2: 4, 3: 2},
-        # "position_to_reward": {0: None, 1: 1, 2: None, 3: 4},
-        # "reward_condition_values": (4, 1),
-        # "cue_condition": "(4,1)"
-        # }
+        main_block = _make_block(reps_per_condition)
 
         for i, t in enumerate(warmup_trials):
-            trials.append({**t, "warm_up": 1, "block": block_number, "trial_in_block": i + 1})
+            trials.append({
+                **t,
+                "warm_up": 1,
+                "burn_in_block": 0,
+                "block": block_number,
+                "trial_in_block": i + 1,
+            })
         for i, t in enumerate(main_block):
-            trials.append({**t, "warm_up": 0, "block": block_number, "trial_in_block": n_warmup + i + 1})
+            trials.append({
+                **t,
+                "warm_up": 0,
+                "burn_in_block": 0,
+                "block": block_number,
+                "trial_in_block": n_warmup + i + 1,
+            })
     return trials
 
-trial_data_list = _build_trials(cfg)
+trial_data_list = _build_trials(cfg, include_burnin_block=INCLUDE_BURNIN_BLOCK)
+total_trials = len(trial_data_list)
 
 # trial_data_list[i] = {
 #   "position_to_color_id": {...},
@@ -961,52 +1221,100 @@ def _load_session_instruction(session: int) -> str:
     else:
         path = INSTRUCTION_DIR / f"CCRP instruction ses {session}.txt"
     if path.exists():
+        return _apply_color_mapping_to_instruction(
+            path.read_text(encoding="utf-8", errors="replace").strip(),
+            COLOR_KEY_MAPPING,
+        )
+    raise SystemExit(f"Instruction file not found: {path}")
+
+
+def _load_burnin_instruction() -> str:
+    """Load burn-in block instruction text."""
+    path = INSTRUCTION_DIR / "CCRP instruction burnin.txt"
+    if path.exists():
         return path.read_text(encoding="utf-8", errors="replace").strip()
     raise SystemExit(f"Instruction file not found: {path}")
+
+
+def _confirm_exit_or_continue() -> bool:
+    """After ESC: return True if user confirms exit (second ESC), False to continue."""
+    esc_confirm_text.draw()
+    win.flip()
+    keys = event.waitKeys(keyList=["escape", "space"])
+    return bool(keys and keys[0] == "escape")
+
+
+def _wait_space_or_exit() -> bool:
+    """Wait for space to continue. Return False if user exits via double ESC."""
+    if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
+        core.wait(DEBUG_CONFIG["trial_duration"])
+        return True
+    while True:
+        keys = event.waitKeys(keyList=["space", "escape"])
+        if not keys:
+            continue
+        if keys[0] == "space":
+            return True
+        if keys[0] == "escape" and _confirm_exit_or_continue():
+            return False
+    return True
+
+
+def _show_instruction_screen(text: str, *, use_session1_height: bool = False) -> bool:
+    """Show instruction screen. Return False if user exits via ESC."""
+    instructions.setText(text)
+    instructions.height = 0.4 if use_session1_height else INSTRUCTION_LETTER_SIZE_DEG
+    instructions.draw()
+    win.flip()
+    return _wait_space_or_exit()
+
 
 # =============================================================================
 # FLIP 1: INSTRUCTIONS SCREEN
 # =============================================================================
-# Presented: Session-specific instruction text 
-# Waits for: Space key before continuing
-instructions.setText(_load_session_instruction(SESSION))
-instructions.draw()
-win.flip()
-if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
-    core.wait(DEBUG_CONFIG["trial_duration"])
-else:
-    event.waitKeys(keyList=['space'])
-
-# Create clock for response time measurement
-clock = core.Clock()
-serial_response_box = None
-simulate_response_box = (
-    DEBUG_CONFIG["enabled"]
-    and DEBUG_CONFIG["auto_respond"]
-    and DEBUG_CONFIG.get("simulate_response_box", True)
-    and RESPONSE_DEVICE in (RESPONSE_DEVICE_CEDRUS, RESPONSE_DEVICE_SELF_MADE)
-)
-if simulate_response_box:
-    print(f"DEBUG: simulating {RESPONSE_DEVICE}; serial response box will not be opened.")
-elif RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
-    serial_response_box = _open_cedrus_box()
-elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
-    serial_response_box = _open_self_made_response_box()
-
-# Initialize cumulative reward and trial data log
-cum_reward = 0.0
-trial_index = 0
-out_dir = _out_dir
-out_dir.mkdir(parents=True, exist_ok=True)
-out_trials_path = _out_trials_path
-out_metadata_path = _out_metadata_path
-print(f"Trial data will be saved to: {out_trials_path}")
-print(f"Metadata will be saved to: {out_metadata_path}")
-first_trial_save = True  # Write header on first trial
+# Burn-in: burn-in instruction first; session instruction shown after burn-in block.
+# No burn-in: session instruction only.
 completed_normally = True
-exp_start_time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-csv_columns = None
-session_start_perf = time.perf_counter()
+if INCLUDE_BURNIN_BLOCK:
+    if not _show_instruction_screen(_load_burnin_instruction()):
+        completed_normally = False
+else:
+    if not _show_instruction_screen(
+        _load_session_instruction(SESSION),
+        use_session1_height=(SESSION == 1),
+    ):
+        completed_normally = False
+
+serial_response_box = None
+if completed_normally:
+    # Create clock for response time measurement
+    clock = core.Clock()
+    simulate_response_box = (
+        DEBUG_CONFIG["enabled"]
+        and DEBUG_CONFIG["auto_respond"]
+        and DEBUG_CONFIG.get("simulate_response_box", True)
+        and RESPONSE_DEVICE in (RESPONSE_DEVICE_CEDRUS, RESPONSE_DEVICE_SELF_MADE)
+    )
+    if simulate_response_box:
+        print(f"DEBUG: simulating {RESPONSE_DEVICE}; serial response box will not be opened.")
+    elif RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
+        serial_response_box = _open_cedrus_box()
+    elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
+        serial_response_box = _open_self_made_response_box()
+
+    # Initialize cumulative reward and trial data log
+    cum_reward = 0.0
+    trial_index = 0
+    out_dir = _out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_trials_path = _out_trials_path
+    out_metadata_path = _out_metadata_path
+    print(f"Trial data will be saved to: {out_trials_path}")
+    print(f"Metadata will be saved to: {out_metadata_path}")
+    first_trial_save = True  # Write header on first trial
+    exp_start_time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    csv_columns = None
+    session_start_perf = time.perf_counter()
 
 # =============================================================================
 # TRIAL LOOP
@@ -1017,21 +1325,28 @@ session_start_perf = time.perf_counter()
 #   FLIP C: Feedback (reward, RT, etc.)
 prev_block = None
 
-for trial_in_session in range(total_trials):
+for trial_in_session in range(total_trials if completed_normally else 0):
     trial_data = trial_data_list[trial_index]
     current_block = trial_data["block"]
     if prev_block is not None and current_block != prev_block:
-        block_break_text.setText(
-            f"End of Block {prev_block}.\n\n"
-            f"Next: Block {current_block} of {n_blocks}.\n\n"
-            "Press SPACE to continue."
-        )
-        block_break_text.draw()
-        win.flip()
-        if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
-            core.wait(DEBUG_CONFIG["trial_duration"])
+        if prev_block == BURNIN_BLOCK_NUMBER and current_block == 1:
+            if not _show_instruction_screen(
+                _load_session_instruction(SESSION),
+                use_session1_height=(SESSION == 1),
+            ):
+                completed_normally = False
+                break
         else:
-            event.waitKeys(keyList=['space'])
+            block_break_text.setText(
+                f"End of Block {prev_block}.\n\n"
+                f"Next: Block {current_block} of {n_blocks}.\n\n"
+                "Press SPACE to continue."
+            )
+            block_break_text.draw()
+            win.flip()
+            if not _wait_space_or_exit():
+                completed_normally = False
+                break
 
     position_to_color_id = trial_data["position_to_color_id"]
     position_to_reward = trial_data["position_to_reward"]
@@ -1124,13 +1439,16 @@ for trial_in_session in range(total_trials):
         core.wait(DEBUG_CONFIG["trial_duration"])
         best_pos = max(position_to_reward, key=lambda p: position_to_reward.get(p) or 0)
         correct_color_id = position_to_color_id.get(best_pos) or 1
-        pressed_key = response_keys[correct_color_id - 1]
+        pressed_key = _response_key_for_color_id(correct_color_id, SLOT_TO_COLOR_ID)
         response_time = cue_time + DEBUG_CONFIG["trial_duration"]
         keys = [(pressed_key, response_time)]
         rt = DEBUG_CONFIG["trial_duration"] * 1000
         rt_computer_clock = rt
-        selected_position = correct_color_id - 1
         selected_color = correct_color_id
+        selected_position = next(
+            (p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == selected_color),
+            None,
+        )
         actual_reward = position_to_reward.get(best_pos) or 0
     else:
         event.clearEvents()
@@ -1147,10 +1465,7 @@ for trial_in_session in range(total_trials):
         pressed_key = keys[0][0]
         response_time = keys[0][1]
         if pressed_key == 'escape':
-            esc_confirm_text.draw()
-            win.flip()
-            k = event.waitKeys(keyList=['escape', 'space'])
-            if k[0] == 'escape':
+            if _confirm_exit_or_continue():
                 completed_normally = False
                 break
             trial_index += 1
@@ -1159,15 +1474,16 @@ for trial_in_session in range(total_trials):
         if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
             rt = keys[0][2]
             selected_color = CEDRUS_BUTTON_TO_COLOR_ID[pressed_key]
-            selected_position = selected_color - 1
         elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
             rt = keys[0][2]
             selected_color = SELF_MADE_PIN_TO_COLOR_ID[pressed_key]
-            selected_position = selected_color - 1
         else:
             rt = rt_computer_clock
-            selected_position = response_keys.index(pressed_key)
-            selected_color = selected_position + 1  # color pressed (1–4)
+            selected_color = SLOT_TO_COLOR_ID[response_keys.index(pressed_key)]
+        selected_position = next(
+            (p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == selected_color),
+            None,
+        )
         # Find position with that color; reward = position_to_reward[that_pos] (0 if None)
         pos_with_color = next((p for p in range(4) if position_to_color_id.get(p) == selected_color), None)
         actual_reward = (position_to_reward.get(pos_with_color) or 0) if pos_with_color is not None else 0
@@ -1196,8 +1512,20 @@ for trial_in_session in range(total_trials):
     feedback3.setText(("%5.0f" % rt + " ms") if rt is not None else "")  # RT in ms
     current_block = trial_data["block"]
     trial_in_block = trial_data["trial_in_block"]
-    n_in_block = (n_warmup_first + n_trials_per_block) if current_block == 1 else (n_warmup_other + n_trials_per_block)
-    feedback4.setText("Block  " + str(current_block) + " / " + str(n_blocks) + "     Trial  " + str(trial_in_block) + " / " + str(n_in_block))  # block & trial info
+    if trial_data.get("burn_in_block"):
+        feedback4.setText(
+            "Burn-in     Trial  " + str(trial_in_block) + " / " + str(BURNIN_TRIALS_PER_BLOCK)
+        )
+    else:
+        n_in_block = (
+            (n_warmup_first + n_trials_per_block)
+            if current_block == 1
+            else (n_warmup_other + n_trials_per_block)
+        )
+        feedback4.setText(
+            "Block  " + str(current_block) + " / " + str(n_blocks)
+            + "     Trial  " + str(trial_in_block) + " / " + str(n_in_block)
+        )
 
     feedback1.draw()
     feedback2.draw()
@@ -1239,9 +1567,13 @@ for trial_in_session in range(total_trials):
         trial_condition_label=trial_data["cue_condition"],
         num_cues=trial_data["num_cues"],
         warm_up=trial_data["warm_up"],
+        burn_in_block=trial_data.get("burn_in_block", 0),
+        participation_day=PARTICIPATION_DAY,
+        first_session_of_day=1 if FIRST_SESSION_OF_DAY else 0,
         trial_start_jitter_time_ms=trial_start_jitter_time_ms,
         trial_wall_clock_str=trial_wall_clock_str,
         session_elapsed_sec=session_elapsed_sec,
+        trial_note=REPEAT_DATA_NOTE if trial_index == 0 and REPEAT_DATA_NOTE else "",
     )
 
     if csv_columns is None:
@@ -1256,6 +1588,7 @@ for trial_in_session in range(total_trials):
                 n_trials_total=total_trials,
                 n_trials_per_block=n_trials_per_block,
                 total_warmup=total_warmup,
+                include_burnin_block=INCLUDE_BURNIN_BLOCK,
                 cfg=cfg,
                 dat_columns=csv_columns,
             )
@@ -1282,4 +1615,3 @@ if serial_response_box is not None:
     serial_response_box.close()
 win.close()
 core.quit()
-

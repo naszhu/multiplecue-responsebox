@@ -17,3 +17,5 @@ others/Instructions/
 *.csv
 *.dat
 *.png
+*.json
+*.docx
