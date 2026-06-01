@@ -47,7 +47,10 @@ DEBUG_CONFIG = {
 }
 DEFAULT_PARTICIPANT = "3"
 DEFAULT_MONITOR_NAME = "room1_a4"
-DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_CEDRUS
+DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_SELF_MADE
+# Physical unit ID: KB=keyboard, RB=Cedrus response box, SRB1–SRB3=self-made boxes.
+DEVICE_NAME_CHOICES = ["KB", "RB", "SRB1", "SRB2", "SRB3"]
+DEFAULT_DEVICE_NAME = "SRB1"
 ############################# TO MODIFY ABOVE
 CODE_VERSION = "v3-2026-05-30"
 
@@ -391,6 +394,12 @@ session_dlg.addField(
     choices=[RESPONSE_DEVICE_KEYBOARD, RESPONSE_DEVICE_CEDRUS, RESPONSE_DEVICE_SELF_MADE],
 )
 session_dlg.addField(
+    "Device name",
+    initial=DEFAULT_DEVICE_NAME,
+    choices=DEVICE_NAME_CHOICES,
+    tip="Physical unit: KB=keyboard, RB=Cedrus box, SRB1–SRB3=self-made response boxes.",
+)
+session_dlg.addField(
     "Color map layout",
     initial=DEFAULT_COLOR_MAP_LAYOUT,
     choices=["horizontal", "keyboard"],
@@ -427,8 +436,13 @@ HANDEDNESS = str(session_dlg.data[7]).strip() or "NA"
 COLOR_VISION = str(session_dlg.data[8]).strip() or "NA"
 EYE_VISION = str(session_dlg.data[9]).strip() or "NA"
 RESPONSE_DEVICE = session_dlg.data[10]
-COLOR_MAP_LAYOUT = session_dlg.data[11]  # "horizontal" or "keyboard"
-MONITOR_NAME = str(session_dlg.data[12]).strip() or MONITOR_NAME
+DEVICE_NAME = str(session_dlg.data[11]).strip()
+if DEVICE_NAME not in DEVICE_NAME_CHOICES:
+    raise SystemExit(
+        f"Device name must be one of {DEVICE_NAME_CHOICES!r}; got {DEVICE_NAME!r}."
+    )
+COLOR_MAP_LAYOUT = session_dlg.data[12]  # "horizontal" or "keyboard"
+MONITOR_NAME = str(session_dlg.data[13]).strip() or MONITOR_NAME
 
 _out_dir = (EXP_DIR / "data_written").resolve()
 _out_trials_path, _out_metadata_path, DATA_FILE_STEM, REPEAT_DATA_NOTE, REPEAT_REASON = _resolve_data_output_paths(
@@ -517,6 +531,7 @@ def _build_trial_row(
         "ColorMapLayout": COLOR_MAP_LAYOUT,
         "ColorKeyMapping": COLOR_KEY_MAPPING,
         "ResponseDevice": RESPONSE_DEVICE,
+        "DeviceName": DEVICE_NAME,
         "Subject": PARTICIPANT,
         "Handedness": HANDEDNESS,
         "ColorVision": COLOR_VISION,
@@ -573,6 +588,7 @@ DAT_COLUMN_DESCRIPTIONS = {
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
     "ColorKeyMapping": "Four-character mapping for response slots 0–3 left-to-right: each letter is r, g, b, or y.",
     "ResponseDevice": "Response input device used for this run: keyboard, response_box_cedrus, or self-made-response-box.",
+    "DeviceName": "Physical response unit ID from the session dialog: KB, RB, SRB1, SRB2, or SRB3.",
     "Subject": "Participant ID from the session dialog.",
     "Handedness": "Participant handedness from the session dialog.",
     "ColorVision": "Participant color vision status from the session dialog.",
@@ -722,6 +738,7 @@ def _build_metadata(
             "reward_money_factor": REWARD_MONEY_FACTOR,
             "full_screen": "Y" if DEBUG_CONFIG.get("full_screen", True) else "N",
             "response_device": RESPONSE_DEVICE,
+            "device_name": DEVICE_NAME,
             "response_keys": [k.upper() for k in response_keys],
             "response_box_cedrus_buttons": dict(CEDRUS_BUTTON_TO_COLOR_ID),
             "self_made_response_box_pins": dict(SELF_MADE_PIN_TO_COLOR_ID),
