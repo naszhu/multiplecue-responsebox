@@ -49,19 +49,41 @@ DEFAULT_PARTICIPANT = "3"
 DEFAULT_MONITOR_NAME = "room1_a4"
 DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_CEDRUS
 ############################# TO MODIFY ABOVE
-CODE_VERSION = "v2-2026-05-29"
+CODE_VERSION = "v3-2026-05-30"
+
+############################# COUNTERBALANCE / DATA POLICY
+PRODUCTION_START_PARTICIPANT = 8  # IDs 1–7 pilot → rgby; ID 8+ mapping from CSV
+MAX_PARTICIPANT_ID = 100
+PARTICIPANT_CHOICES = ["test"] + [str(i) for i in range(1, MAX_PARTICIPANT_ID + 1)]
+EXP_DIR = Path(__file__).resolve().parent
+PARTICIPANT_COLOR_KEY_MAPPING_PATH = EXP_DIR / "participant_color_key_mapping.csv"
 
 DEFAULT_COLOR_MAP_LAYOUT = "horizontal" if DEFAULT_RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS else "keyboard"
 CEDRUS_VID = 0x0403
 CEDRUS_PID = 0x6001
 CEDRUS_BAUDRATE = 115200
-CEDRUS_BUTTON_TO_COLOR_ID = {"2": 1, "3": 2, "4": 3, "5": 4}
-SELF_MADE_PIN_TO_COLOR_ID = {"6": 1, "7": 2, "8": 4, "9": 3}
+CEDRUS_BUTTON_IDS = ["2", "3", "4", "5"]  # response slots 0–3 left to right
+SELF_MADE_PIN_IDS = ["6", "7", "9", "8"]  # response slots 0–3 left to right
 # Constants 
 EXPERIMENT_NAME = "CCP"
 EXPERIMENT_NUMBER = 1001
-COLOR_KEY_MAPPING = "rgby"
+COLOR_LETTER_TO_ID = {"r": 1, "g": 2, "b": 3, "y": 4}
+COLOR_ID_TO_NAME = {1: "RED", 2: "GREEN", 3: "BLUE", 4: "YELLOW"}
+ALL_COLOR_KEY_MAPPINGS = sorted({"".join(p) for p in permutations("rgby")})
+COLOR_KEY_MAPPING_AUTO_CHOICE = "as assigned"
+COLOR_KEY_MAPPING_DIALOG_CHOICES = [COLOR_KEY_MAPPING_AUTO_CHOICE] + ALL_COLOR_KEY_MAPPINGS
 MAX_SESSION = 999  # Soft cap for dialog input; session 6+ uses final experimental config.
+
+# Set after session dialog (numeric lookup from CSV; test may randomize).
+COLOR_KEY_MAPPING = "rgby"
+COLOR_KEY_MAPPING_ASSIGNED = "rgby"
+COLOR_KEY_MAPPING_OVERRIDDEN = False
+SLOT_TO_COLOR_ID = [1, 2, 3, 4]
+CEDRUS_BUTTON_TO_COLOR_ID = {}
+SELF_MADE_PIN_TO_COLOR_ID = {}
+REPEAT_DATA_NOTE = ""
+REPEAT_REASON = ""
+DATA_FILE_STEM = ""
 # Explicit cue-condition labels used in output. The trial generator chooses from
 # these configured conditions and writes the configured label directly.
 REWARD_CONDITIONS = [
@@ -177,17 +199,169 @@ REFRESH_RATE_TOLERANCE_HZ = 10
 # Possible reward values (points 1–4). 
 REWARD_VALUES = [1, 2, 3, 4]
 
-# Color-to-key mapping: Red→D, Green→C, Blue→K, Yellow→M
-# Position i has fixed color: 0=Red, 1=Green, 2=Blue, 3=Yellow (from STIMULUS_TARGET_COLORS_RGB)
-COLOR_KEYS = ['d', 'c', 'k', 'm']  # key for position/color 0,1,2,3
+# Physical response keys per slot 0–3 (D, C, K, M). Color at each slot comes from COLOR_KEY_MAPPING.
+COLOR_KEYS = ['d', 'c', 'k', 'm']
 
 NUM_POSITIONS = 4
+
+
+def _load_participant_color_key_mapping_table() -> dict[str, str]:
+    """Read committed assignment table (read-only; never written by this program)."""
+    path = PARTICIPANT_COLOR_KEY_MAPPING_PATH
+    if not path.is_file():
+        raise SystemExit(f"Missing color-key mapping table: {path}")
+    table = {}
+    with open(path, newline="", encoding="utf-8") as fp:
+        reader = csv.DictReader(fp)
+        if reader.fieldnames is None or "participant_id" not in reader.fieldnames or "color_key_mapping" not in reader.fieldnames:
+            raise SystemExit(f"Invalid mapping table columns in {path}")
+        for row in reader:
+            pid = str(row["participant_id"]).strip()
+            mapping = str(row["color_key_mapping"]).strip().lower()
+            if mapping not in ALL_COLOR_KEY_MAPPINGS:
+                raise SystemExit(f"Invalid mapping {mapping!r} for participant {pid} in {path}")
+            table[pid] = mapping
+    for p in range(1, MAX_PARTICIPANT_ID + 1):
+        if str(p) not in table:
+            raise SystemExit(f"Mapping table missing participant_id {p} in {path}")
+    return table
+
+
+PARTICIPANT_COLOR_KEY_MAPPING = _load_participant_color_key_mapping_table()
+
+
+def _slot_color_ids(mapping: str) -> list[int]:
+    mapping = mapping.lower()
+    return [COLOR_LETTER_TO_ID[c] for c in mapping]
+
+
+def _validate_color_key_mapping(mapping: str) -> str:
+    mapping = str(mapping).strip().lower()
+    if mapping not in ALL_COLOR_KEY_MAPPINGS:
+        raise SystemExit(f"Invalid color key mapping: {mapping!r}")
+    return mapping
+
+
+def _assigned_color_key_mapping(participant: str) -> str:
+    if participant == "test":
+        return random.choice(ALL_COLOR_KEY_MAPPINGS)
+    return PARTICIPANT_COLOR_KEY_MAPPING[participant]
+
+
+def _resolve_color_key_mapping_from_dialog(
+    participant: str, dialog_choice: str
+) -> tuple[str, str, bool]:
+    """Return (assigned_mapping, used_mapping, overridden)."""
+    assigned = _assigned_color_key_mapping(participant)
+    choice = str(dialog_choice).strip()
+    if choice.lower() == COLOR_KEY_MAPPING_AUTO_CHOICE.lower():
+        return assigned, assigned, False
+    used = _validate_color_key_mapping(choice)
+    return assigned, used, used != assigned
+
+
+def _build_device_color_maps(mapping: str) -> tuple[list[int], dict[str, int], dict[str, int]]:
+    slot_to_color_id = _slot_color_ids(mapping)
+    cedrus_button_to_color_id = {
+        CEDRUS_BUTTON_IDS[i]: slot_to_color_id[i] for i in range(NUM_POSITIONS)
+    }
+    self_made_pin_to_color_id = {
+        SELF_MADE_PIN_IDS[i]: slot_to_color_id[i] for i in range(NUM_POSITIONS)
+    }
+    return slot_to_color_id, cedrus_button_to_color_id, self_made_pin_to_color_id
+
+
+def _slot_color_names(mapping: str) -> list[str]:
+    return [COLOR_ID_TO_NAME[cid] for cid in _slot_color_ids(mapping)]
+
+
+def _response_key_for_color_id(color_id: int, slot_to_color_id: list[int]) -> str:
+    slot = slot_to_color_id.index(color_id)
+    return COLOR_KEYS[slot]
+
+
+def _color_to_key_mapping_metadata(mapping: str, response_device: str) -> dict[str, str]:
+    names = _slot_color_names(mapping)
+    slot_to_color_id = _slot_color_ids(mapping)
+    if response_device == RESPONSE_DEVICE_KEYBOARD:
+        labels = [k.upper() for k in COLOR_KEYS]
+    elif response_device == RESPONSE_DEVICE_CEDRUS:
+        labels = [f"button_{b}" for b in CEDRUS_BUTTON_IDS]
+    else:
+        labels = [f"pin_{p}" for p in SELF_MADE_PIN_IDS]
+    return {
+        COLOR_ID_TO_NAME[slot_to_color_id[i]]: labels[i] for i in range(NUM_POSITIONS)
+    }
+
+
+def _color_key_mapping_description(mapping: str, response_device: str) -> str:
+    names = _slot_color_names(mapping)
+    order = ", ".join(names)
+    if response_device == RESPONSE_DEVICE_KEYBOARD:
+        keys = ", ".join(k.upper() for k in COLOR_KEYS)
+        return (
+            f"Mapping {mapping}: slot colors left-to-right are {order} on keys {keys} (D, C, K, M)."
+        )
+    if response_device == RESPONSE_DEVICE_CEDRUS:
+        return (
+            f"Mapping {mapping}: Cedrus buttons left-to-right are {order}."
+        )
+    return (
+        f"Mapping {mapping}: self-made pins left-to-right (6,7,9,8) are {order}."
+    )
+
+
+def _apply_color_mapping_to_instruction(text: str, mapping: str) -> str:
+    c0, c1, c2, c3 = _slot_color_names(mapping)
+    return text.format(C0=c0, C1=c1, C2=c2, C3=c3)
+
+
+def _resolve_data_output_paths(
+    participant: str, session: int, out_dir: Path
+) -> tuple[Path, Path, str, str, str]:
+    """Return trials path, metadata path, file stem, repeat note, repeat reason (empty if not repeat)."""
+    base_stem = f"CCRP_subj{participant}_ses{session}"
+    trials_path = (out_dir / f"{base_stem}_trials.csv").resolve()
+    metadata_path = (out_dir / f"{base_stem}_metadata.json").resolve()
+
+    if participant == "test":
+        return trials_path, metadata_path, base_stem, "", ""
+
+    if not trials_path.exists() and not metadata_path.exists():
+        return trials_path, metadata_path, base_stem, "", ""
+
+    repeat_dlg = gui.Dlg(title="Participant data already exists")
+    repeat_dlg.addText(
+        f"Data already exists for participant {participant}, session {session}.\n\n"
+        "To continue anyway, enter a reason below and click OK."
+    )
+    repeat_dlg.addField("Reason (required)", initial="")
+    repeat_dlg.show()
+    if not repeat_dlg.OK:
+        raise SystemExit("Repeat run cancelled.")
+    reason = str(repeat_dlg.data[0]).strip()
+    if not reason:
+        raise SystemExit("A reason is required to overwrite existing participant data.")
+
+    suffix_n = 2
+    while True:
+        stem = f"{base_stem}({suffix_n})"
+        candidate_trials = (out_dir / f"{stem}_trials.csv").resolve()
+        candidate_meta = (out_dir / f"{stem}_metadata.json").resolve()
+        if not candidate_trials.exists() and not candidate_meta.exists():
+            note = f"this is a repeated data, reason is '{reason}'"
+            return candidate_trials, candidate_meta, stem, note, reason
+        suffix_n += 1
 
 
 # Session dialog: run one session per launch (6+ uses experimental config: 8 blocks × 50 trials)
 PARTICIPATION_DAY_LABEL_TO_NUM = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4}
 session_dlg = gui.Dlg(title="CCRP Session")
-session_dlg.addField("Participant", initial=DEFAULT_PARTICIPANT)
+session_dlg.addField(
+    "Participant",
+    initial=DEFAULT_PARTICIPANT if DEFAULT_PARTICIPANT in PARTICIPANT_CHOICES else "1",
+    choices=PARTICIPANT_CHOICES,
+)
 session_dlg.addField("Session", initial=1)
 session_dlg.addField(
     "First session of day?",
@@ -199,6 +373,12 @@ session_dlg.addField(
     initial="1st",
     choices=["1st", "2nd", "3rd", "4th"],
     tip="Which day of participation is this?",
+)
+session_dlg.addField(
+    "Color key mapping",
+    initial=COLOR_KEY_MAPPING_AUTO_CHOICE,
+    choices=COLOR_KEY_MAPPING_DIALOG_CHOICES,
+    tip="Default uses table assignment (random for test). Pick a specific mapping only to override.",
 )
 session_dlg.addField("Age", initial="")
 session_dlg.addField("Gender", initial="NA")
@@ -225,6 +405,8 @@ session_dlg.show()
 if not session_dlg.OK:
     raise SystemExit("Session dialog cancelled")
 PARTICIPANT = str(session_dlg.data[0]).strip()
+if PARTICIPANT not in PARTICIPANT_CHOICES:
+    raise SystemExit(f"Participant must be 'test' or an integer from 1 to {MAX_PARTICIPANT_ID}.")
 SESSION = int(session_dlg.data[1])  # 1-based session number
 if SESSION < 1 or SESSION > MAX_SESSION:
     raise SystemExit(f"Session must be between 1 and {MAX_SESSION}.")
@@ -233,32 +415,25 @@ _participation_day_label = str(session_dlg.data[3]).strip().lower()
 if _participation_day_label not in PARTICIPATION_DAY_LABEL_TO_NUM:
     raise SystemExit(f"Invalid participation day: {session_dlg.data[3]!r}. Choose 1st, 2nd, 3rd, or 4th.")
 PARTICIPATION_DAY = PARTICIPATION_DAY_LABEL_TO_NUM[_participation_day_label]
-AGE = str(session_dlg.data[4]).strip() or "NA"
-GENDER = str(session_dlg.data[5]).strip() or "NA"
-HANDEDNESS = str(session_dlg.data[6]).strip() or "NA"
-COLOR_VISION = str(session_dlg.data[7]).strip() or "NA"
-EYE_VISION = str(session_dlg.data[8]).strip() or "NA"
-RESPONSE_DEVICE = session_dlg.data[9]
-COLOR_MAP_LAYOUT = session_dlg.data[10]  # "horizontal" or "keyboard"
-MONITOR_NAME = str(session_dlg.data[11]).strip() or MONITOR_NAME
+COLOR_KEY_MAPPING_ASSIGNED, COLOR_KEY_MAPPING, COLOR_KEY_MAPPING_OVERRIDDEN = (
+    _resolve_color_key_mapping_from_dialog(PARTICIPANT, session_dlg.data[4])
+)
+SLOT_TO_COLOR_ID, CEDRUS_BUTTON_TO_COLOR_ID, SELF_MADE_PIN_TO_COLOR_ID = _build_device_color_maps(
+    COLOR_KEY_MAPPING
+)
+AGE = str(session_dlg.data[5]).strip() or "NA"
+GENDER = str(session_dlg.data[6]).strip() or "NA"
+HANDEDNESS = str(session_dlg.data[7]).strip() or "NA"
+COLOR_VISION = str(session_dlg.data[8]).strip() or "NA"
+EYE_VISION = str(session_dlg.data[9]).strip() or "NA"
+RESPONSE_DEVICE = session_dlg.data[10]
+COLOR_MAP_LAYOUT = session_dlg.data[11]  # "horizontal" or "keyboard"
+MONITOR_NAME = str(session_dlg.data[12]).strip() or MONITOR_NAME
 
-_out_dir = (Path(__file__).resolve().parent / "data_written").resolve()
-_base_stem = f"CCRP_subj{PARTICIPANT}_ses{SESSION}"
-_out_trials_path = (_out_dir / f"{_base_stem}_trials.csv").resolve()
-_out_metadata_path = (_out_dir / f"{_base_stem}_metadata.json").resolve()
-if _out_trials_path.exists() or _out_metadata_path.exists():
-    _dup_msg = (
-        f"Participant data already exists (participant {PARTICIPANT}, session {SESSION}).\n"
-        "Delete existing data or try another participant number."
-    )
-    if hasattr(gui, "popupError"):
-        gui.popupError(_dup_msg, title="Participant data already exists")
-    else:
-        # Compatibility fallback for older PsychoPy versions.
-        _error_dlg = gui.Dlg(title="Participant data already exists")
-        _error_dlg.addText(_dup_msg)
-        _error_dlg.show()
-    raise SystemExit("Data file already exists. Exiting after showing popup message.")
+_out_dir = (EXP_DIR / "data_written").resolve()
+_out_trials_path, _out_metadata_path, DATA_FILE_STEM, REPEAT_DATA_NOTE, REPEAT_REASON = _resolve_data_output_paths(
+    PARTICIPANT, SESSION, _out_dir
+)
 
 
 def _session_config_idx(session: int) -> int:
@@ -300,6 +475,7 @@ def _build_trial_row(
     trial_start_jitter_time_ms=0,
     trial_wall_clock_str="",
     session_elapsed_sec=0.0,
+    trial_note="",
 ):
     """Build a trial data row """
     # Color layout: 4-digit strings (position 0..3). Rewards from position_to_reward.
@@ -385,7 +561,7 @@ def _build_trial_row(
         "EndTrialTime": round(end_trial_time * 1000, 2),  # ms
         "TrialWallClockTime": trial_wall_clock_str,
         "SessionElapsedSec": round(session_elapsed_sec, 3),
-        "Note": "",
+        "Note": trial_note,
     }
 
 
@@ -395,7 +571,7 @@ DAT_COLUMN_DESCRIPTIONS = {
     "ExperimentNumber": "Numeric experiment ID constant.",
     "CodeVersion": "Experiment code version configured at the top of the script.",
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
-    "ColorKeyMapping": "Four-character response-color mapping string. Current fixed value rgby means red, green, blue, yellow.",
+    "ColorKeyMapping": "Four-character mapping for response slots 0–3 left-to-right: each letter is r, g, b, or y.",
     "ResponseDevice": "Response input device used for this run: keyboard, response_box_cedrus, or self-made-response-box.",
     "Subject": "Participant ID from the session dialog.",
     "Handedness": "Participant handedness from the session dialog.",
@@ -503,7 +679,7 @@ def _build_metadata(
             "number_of_reward_conditions": n_reward_conds,
             "main_trials_per_reward_condition_per_block_balanced": reps_per_condition,
             "color_id_mapping_for_cues": {str(i + 1): color_names[i] for i in range(NUM_POSITIONS)},
-            "color_to_key_mapping": {color_names[i]: COLOR_KEYS[i].upper() for i in range(NUM_POSITIONS)},
+            "color_to_key_mapping": _color_to_key_mapping_metadata(COLOR_KEY_MAPPING, RESPONSE_DEVICE),
             "location_id_mapping": {
                 str(i + 1): {
                     "screen_location": location_names[i],
@@ -523,13 +699,16 @@ def _build_metadata(
             "exp_start_time": exp_start_time_str,
             "debug_config_enabled": debug_on,
             "color_key_mapping": COLOR_KEY_MAPPING,
-            "color_key_mapping_description": (
-                "Current fixed mapping is rgby: red, green, blue, yellow. "
-                "For keyboard, rgby corresponds to keys d, c, k, m. "
-                "For response_box_cedrus, rgby corresponds to the horizontal buttons from left to right. "
-                "For self-made-response-box, rgby corresponds to left middle finger, left index finger, "
-                "right middle finger, right index finger."
+            "color_key_mapping_assigned": COLOR_KEY_MAPPING_ASSIGNED,
+            "color_key_mapping_overridden": COLOR_KEY_MAPPING_OVERRIDDEN,
+            "color_key_mapping_table_path": str(PARTICIPANT_COLOR_KEY_MAPPING_PATH),
+            "production_start_participant": PRODUCTION_START_PARTICIPANT,
+            "color_key_mapping_description": _color_key_mapping_description(
+                COLOR_KEY_MAPPING, RESPONSE_DEVICE
             ),
+            "repeated_run": bool(REPEAT_DATA_NOTE),
+            "repeat_reason": REPEAT_REASON,
+            "data_file_stem": DATA_FILE_STEM,
             "subject": PARTICIPANT,
             "age": AGE,
             "gender": GENDER,
@@ -544,8 +723,8 @@ def _build_metadata(
             "full_screen": "Y" if DEBUG_CONFIG.get("full_screen", True) else "N",
             "response_device": RESPONSE_DEVICE,
             "response_keys": [k.upper() for k in response_keys],
-            "response_box_cedrus_buttons": CEDRUS_BUTTON_TO_COLOR_ID,
-            "self_made_response_box_pins": SELF_MADE_PIN_TO_COLOR_ID,
+            "response_box_cedrus_buttons": dict(CEDRUS_BUTTON_TO_COLOR_ID),
+            "self_made_response_box_pins": dict(SELF_MADE_PIN_TO_COLOR_ID),
             "response_deadline": RESPONSE_DEADLINE,
             "startup_display_check_description": "After Window open, compare actual win.size to WIN_SIZE_PIX and win.getActualFrameRate() to expected Hz; on mismatch, C continues and ESC exits.",
             "fixed_refresh_rate_expected_hz": EXPECTED_REFRESH_HZ,
@@ -739,8 +918,6 @@ MEASURED_REFRESH_RATE, ACTUAL_WIN_SIZE_PIX, DISPLAY_CHECK_SPEC_OK, DISPLAY_CHECK
 # Define cue positions (4 locations, from POSITIONS_DEG)
 positions = POSITIONS_DEG
 
-# Response keys: color-to-key mapping (Red=D, Green=C, Blue=K, Yellow=M)
-# Position 0=Red, 1=Green, 2=Blue, 3=Yellow
 response_keys = COLOR_KEYS
 
 # Colors for each cue (from paradigm StimulusTargetColorsRGB)
@@ -803,14 +980,15 @@ def _color_map_positions(layout: str):
 
 color_map_positions = _color_map_positions(COLOR_MAP_LAYOUT)
 color_response_squares = []
-for i in range(NUM_POSITIONS):
+for slot_i in range(NUM_POSITIONS):
+    color_id = SLOT_TO_COLOR_ID[slot_i]
     rect = visual.Rect(
         win,
         width=RESPONSE_COLOR_SIZE_DEG,
         height=RESPONSE_COLOR_SIZE_DEG,
-        fillColor=STIMULUS_TARGET_COLORS_RGB[i],
+        fillColor=STIMULUS_TARGET_COLORS_RGB[color_id - 1],
         lineColor=None,
-        pos=color_map_positions[i],
+        pos=color_map_positions[slot_i],
         units=USE_UNITS,
     )
     color_response_squares.append(rect)
@@ -1024,7 +1202,10 @@ def _load_session_instruction(session: int) -> str:
     else:
         path = INSTRUCTION_DIR / f"CCRP instruction ses {session}.txt"
     if path.exists():
-        return path.read_text(encoding="utf-8", errors="replace").strip()
+        return _apply_color_mapping_to_instruction(
+            path.read_text(encoding="utf-8", errors="replace").strip(),
+            COLOR_KEY_MAPPING,
+        )
     raise SystemExit(f"Instruction file not found: {path}")
 
 
@@ -1239,13 +1420,16 @@ for trial_in_session in range(total_trials if completed_normally else 0):
         core.wait(DEBUG_CONFIG["trial_duration"])
         best_pos = max(position_to_reward, key=lambda p: position_to_reward.get(p) or 0)
         correct_color_id = position_to_color_id.get(best_pos) or 1
-        pressed_key = response_keys[correct_color_id - 1]
+        pressed_key = _response_key_for_color_id(correct_color_id, SLOT_TO_COLOR_ID)
         response_time = cue_time + DEBUG_CONFIG["trial_duration"]
         keys = [(pressed_key, response_time)]
         rt = DEBUG_CONFIG["trial_duration"] * 1000
         rt_computer_clock = rt
-        selected_position = correct_color_id - 1
         selected_color = correct_color_id
+        selected_position = next(
+            (p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == selected_color),
+            None,
+        )
         actual_reward = position_to_reward.get(best_pos) or 0
     else:
         event.clearEvents()
@@ -1271,15 +1455,16 @@ for trial_in_session in range(total_trials if completed_normally else 0):
         if RESPONSE_DEVICE == RESPONSE_DEVICE_CEDRUS:
             rt = keys[0][2]
             selected_color = CEDRUS_BUTTON_TO_COLOR_ID[pressed_key]
-            selected_position = selected_color - 1
         elif RESPONSE_DEVICE == RESPONSE_DEVICE_SELF_MADE:
             rt = keys[0][2]
             selected_color = SELF_MADE_PIN_TO_COLOR_ID[pressed_key]
-            selected_position = selected_color - 1
         else:
             rt = rt_computer_clock
-            selected_position = response_keys.index(pressed_key)
-            selected_color = selected_position + 1  # color pressed (1–4)
+            selected_color = SLOT_TO_COLOR_ID[response_keys.index(pressed_key)]
+        selected_position = next(
+            (p for p in range(NUM_POSITIONS) if position_to_color_id.get(p) == selected_color),
+            None,
+        )
         # Find position with that color; reward = position_to_reward[that_pos] (0 if None)
         pos_with_color = next((p for p in range(4) if position_to_color_id.get(p) == selected_color), None)
         actual_reward = (position_to_reward.get(pos_with_color) or 0) if pos_with_color is not None else 0
@@ -1369,6 +1554,7 @@ for trial_in_session in range(total_trials if completed_normally else 0):
         trial_start_jitter_time_ms=trial_start_jitter_time_ms,
         trial_wall_clock_str=trial_wall_clock_str,
         session_elapsed_sec=session_elapsed_sec,
+        trial_note=REPEAT_DATA_NOTE if trial_index == 0 and REPEAT_DATA_NOTE else "",
     )
 
     if csv_columns is None:
