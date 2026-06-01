@@ -730,6 +730,7 @@ win = visual.Window(
     multiSample=MULTI_SAMPLE,
     numSamples=NUM_SAMPLES,
 )
+win.setMouseVisible(False)
 
 MEASURED_REFRESH_RATE, ACTUAL_WIN_SIZE_PIX, DISPLAY_CHECK_SPEC_OK, DISPLAY_CHECK_MISMATCH_CONTINUED = (
     _run_startup_display_check(win)
