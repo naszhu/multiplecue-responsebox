@@ -37,13 +37,13 @@ RESPONSE_DEVICE_SELF_MADE = "self-made-response-box"
 
 ############################# TO MODIFY BELOW
 DEBUG_CONFIG = {
-    "enabled": False,
+    "enabled": True,
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
     "auto_advance_instructions": False,
-    "auto_respond": True,
+    "auto_respond": False,
     "simulate_response_box": True,  # In debug auto-response mode, skip serial hardware even if a response box is selected.
     "short_feedback": True,
-    "full_screen": True,  # Toggle fullscreen quickly during testing
+    "full_screen": False,  # Toggle fullscreen quickly during testing
 }
 DEFAULT_PARTICIPANT = "3"
 DEFAULT_MONITOR_NAME = "room1_a4"
@@ -52,7 +52,7 @@ DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_SELF_MADE
 DEVICE_NAME_CHOICES = ["KB", "RB", "SRB1", "SRB2", "SRB3"]
 DEFAULT_DEVICE_NAME = "SRB1"
 ############################# TO MODIFY ABOVE
-CODE_VERSION = "v3-2026-05-30"
+CODE_VERSION = "v4-2026-06-10"
 
 ############################# COUNTERBALANCE / DATA POLICY
 PRODUCTION_START_PARTICIPANT = 8  # IDs 1–7 pilot → rgby; ID 8+ mapping from CSV
@@ -736,6 +736,7 @@ def _build_metadata(
             "eye_vision": EYE_VISION,
             "practice": "Y" if SESSION <= 5 else "N",
             "session": SESSION,
+            "session1_instruction_language": SESSION1_INSTRUCTION_LANGUAGE if SESSION == 1 else None,
             "number_of_blocks": n_blocks,
             "total_number_of_trials": n_trials_total,
             "reward_money_factor": REWARD_MONEY_FACTOR,
@@ -1193,7 +1194,18 @@ esc_confirm_text = visual.TextStim(win, text="Press ESC again to exit\n\nPress S
 
 # Instructions (match paradigm: InstructionLetterSize=15*StimFactor, wrapWidth=800*StimFactor)
 INSTRUCTION_DIR = Path(__file__).resolve().parent / "Instructions"
+INSTRUCTION_FONT_CJK = EXP_DIR / "fonts" / "NotoSansCJKsc-Regular.otf"
+INSTRUCTION_FONT_CJK_NAME = "Noto Sans CJK SC"
+INSTRUCTION_LANGUAGE_SUFFIX = {"en": "", "zh": " zh", "da": " da"}
+INSTRUCTION_LANGUAGE_SWITCHER = {
+    "en": "If you want to change to 中文 press c; for dansk press d.\n\n",
+    "zh": "如需切换为英文请按 e，如需切换为丹麦语（dansk）请按 d。\n\n",
+    "da": "Hvis du vil skifte til 中文, tryk c; for engelsk tryk e.\n\n",
+}
 INSTRUCTION_WRAP_WIDTH_DEG = 800 * STIM_FACTOR  # 32 deg, match paradigm Instruction
+_instruction_cjk_font_files = (
+    [str(INSTRUCTION_FONT_CJK)] if INSTRUCTION_FONT_CJK.exists() else []
+)
 instructions = visual.TextStim(
     win,
     text="",
@@ -1201,7 +1213,10 @@ instructions = visual.TextStim(
     height=INSTRUCTION_LETTER_SIZE_DEG,
     wrapWidth=INSTRUCTION_WRAP_WIDTH_DEG,
     units=USE_UNITS,
+    fontFiles=_instruction_cjk_font_files,
 )
+DEFAULT_INSTRUCTION_FONT = instructions.font
+SESSION1_INSTRUCTION_LANGUAGE = "en"
 block_break_text = visual.TextStim(
     win,
     text="",
@@ -1211,10 +1226,25 @@ block_break_text = visual.TextStim(
     units=USE_UNITS,
 )
 
+def _load_session1_instruction(language: str = "en") -> str:
+    """Load session-1 instruction text for the selected language and response device."""
+    if language not in INSTRUCTION_LANGUAGE_SUFFIX:
+        raise SystemExit(f"Unsupported instruction language: {language!r}")
+    path = INSTRUCTION_DIR / (
+        f"CCRP instruction ses 1 {RESPONSE_DEVICE}{INSTRUCTION_LANGUAGE_SUFFIX[language]}.txt"
+    )
+    if not path.exists():
+        raise SystemExit(f"Instruction file not found: {path}")
+    return _apply_color_mapping_to_instruction(
+        path.read_text(encoding="utf-8", errors="replace").strip(),
+        COLOR_KEY_MAPPING,
+    )
+
+
 def _load_session_instruction(session: int) -> str:
     """Load instruction text for session (1-based)."""
     if session == 1:
-        path = INSTRUCTION_DIR / f"CCRP instruction ses 1 {RESPONSE_DEVICE}.txt"
+        return _load_session1_instruction("en")
     elif session in (4, 5):
         path = INSTRUCTION_DIR / "CCRP instruction ses 4-5.txt"
     elif session >= 6:
@@ -1222,10 +1252,10 @@ def _load_session_instruction(session: int) -> str:
     else:
         path = INSTRUCTION_DIR / f"CCRP instruction ses {session}.txt"
     if path.exists():
-        return _apply_color_mapping_to_instruction(
-            path.read_text(encoding="utf-8", errors="replace").strip(),
-            COLOR_KEY_MAPPING,
-        )
+        text = path.read_text(encoding="utf-8", errors="replace").strip()
+        if session in (2, 3):
+            return _apply_color_mapping_to_instruction(text, COLOR_KEY_MAPPING)
+        return text
     raise SystemExit(f"Instruction file not found: {path}")
 
 
@@ -1261,13 +1291,67 @@ def _wait_space_or_exit() -> bool:
     return True
 
 
-def _show_instruction_screen(text: str, *, use_session1_height: bool = False) -> bool:
-    """Show instruction screen. Return False if user exits via ESC."""
+def _set_instruction_display(
+    text: str,
+    *,
+    language: str = "en",
+    use_session1_height: bool = False,
+    use_cjk_font: bool = False,
+) -> None:
     instructions.setText(text)
     instructions.height = 0.4 if use_session1_height else INSTRUCTION_LETTER_SIZE_DEG
+    # PsychoPy/pyglet needs fontFiles + family name; a file path alone renders CJK as boxes.
+    if use_cjk_font and INSTRUCTION_FONT_CJK.exists():
+        instructions.font = INSTRUCTION_FONT_CJK_NAME
+    else:
+        instructions.font = DEFAULT_INSTRUCTION_FONT
+
+
+def _show_instruction_screen(text: str, *, use_session1_height: bool = False) -> bool:
+    """Show instruction screen. Return False if user exits via ESC."""
+    _set_instruction_display(text, use_session1_height=use_session1_height)
     instructions.draw()
     win.flip()
     return _wait_space_or_exit()
+
+
+def _show_session1_first_instruction() -> bool:
+    """Session 1 opening instruction with English / 中文 / dansk switching."""
+    global SESSION1_INSTRUCTION_LANGUAGE
+    language = "en"
+    while True:
+        body = _load_session1_instruction(language)
+        _set_instruction_display(
+            INSTRUCTION_LANGUAGE_SWITCHER[language] + body,
+            language=language,
+            use_session1_height=True,
+            use_cjk_font=True,
+        )
+        instructions.draw()
+        win.flip()
+        if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
+            SESSION1_INSTRUCTION_LANGUAGE = language
+            core.wait(DEBUG_CONFIG["trial_duration"])
+            return True
+        while True:
+            keys = event.waitKeys(keyList=["space", "escape", "c", "d", "e"])
+            if not keys:
+                continue
+            key = keys[0]
+            if key == "c" and language != "zh":
+                language = "zh"
+                break
+            if key == "d" and language != "da":
+                language = "da"
+                break
+            if key == "e" and language != "en":
+                language = "en"
+                break
+            if key == "space":
+                SESSION1_INSTRUCTION_LANGUAGE = language
+                return True
+            if key == "escape" and _confirm_exit_or_continue():
+                return False
 
 
 # =============================================================================
@@ -1280,9 +1364,12 @@ if INCLUDE_BURNIN_BLOCK:
     if not _show_instruction_screen(_load_burnin_instruction()):
         completed_normally = False
 else:
-    if not _show_instruction_screen(
+    if SESSION == 1:
+        if not _show_session1_first_instruction():
+            completed_normally = False
+    elif not _show_instruction_screen(
         _load_session_instruction(SESSION),
-        use_session1_height=(SESSION == 1),
+        use_session1_height=False,
     ):
         completed_normally = False
 

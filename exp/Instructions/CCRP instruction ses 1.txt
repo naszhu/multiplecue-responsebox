@@ -12,7 +12,7 @@ Place your left middle finger on "d", your left index finger on "c", your right 
 
 The keys are associated with four colors: {C0}, {C1}, {C2}, and {C3}. The color-key mapping is also indicated by the colors shown on the keys.
 
-The order of the colors relative to the keys are shown below the circle.
+The order of the colors relative to the keys is shown below the circle.
 
 __________
 
