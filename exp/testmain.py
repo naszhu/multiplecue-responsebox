@@ -692,7 +692,8 @@ def _build_metadata(
             "total_warmup_trials": total_warmup,
             "total_trials_warmup_plus_main": n_trials_total,
             "single_stimulus_at_center": bool(cfg.get("center", False)),
-            "color_key_legend_on_screen_sessions_1_to_3": SESSION in (1, 2, 3),
+            "color_key_legend_on_screen_all_trials": bool(cfg.get("color_map", False)),
+            "color_key_legend_on_warmup_trials_when_not_training": not cfg.get("color_map", False),
             "cue_condition_labels": reward_labels,
             "number_of_reward_conditions": n_reward_conds,
             "main_trials_per_reward_condition_per_block_balanced": reps_per_condition,
@@ -972,8 +973,8 @@ for i, pos in enumerate(positions):
 #   cue_stimuli[2] = (outer_blue, inner_blue, text_blue)     # Blue at pos 2
 #   cue_stimuli[3] = (outer_yellow, inner_yellow, text_yellow)  # Yellow at pos 3
 
-# color_response_squares: 4 colored Rects at bottom (Session 1 only)
-#   Index 0=Red, 1=Green, 2=Blue, 3=Yellow. Maps colors to key positions.
+# color_response_squares: 4 colored Rects at bottom (training sessions + warm-ups)
+#   Slot colors follow SLOT_TO_COLOR_ID (counterbalanced mapping).
 #   Layout "horizontal": 4 boxes in a row (Red, Green, Blue, Yellow left→right).
 #   Layout "keyboard": relative positions like D/C/K/M - D above C (left), K above M (right), staggered.
 def _color_map_positions(layout: str):
@@ -1373,7 +1374,8 @@ for trial_in_session in range(total_trials if completed_normally else 0):
 
     clock.reset()
 
-    show_color_map = SESSION in (1, 2, 3)
+    # Training sessions (1–3): legend on every trial. Later sessions: legend on warm-ups only.
+    show_color_map = cfg.get("color_map", False) or bool(trial_data.get("warm_up", 0))
 
     # =========================================================================
     # FLIP B: CUE/STIMULUS SCREEN (stays until keypress or timeout)
