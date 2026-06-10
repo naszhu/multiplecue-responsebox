@@ -8,8 +8,6 @@ __________
 
 Din opgave er at angive cirkelens farve ved at trykke på en af fire taster: "d", "c", "k" og "m".
 
-Placér din venstre langfinger på "d", venstre pegefinger på "c", højre langfinger på "k" og højre pegefinger på "m".
-
 Tasterne er knyttet til fire farver: {C0}, {C1}, {C2} og {C3}. Farve-tast-tilknytningen vises også ved farverne på tasterne.
 
 Rækkefølgen af farverne i forhold til tasterne vises under cirklen.

@@ -8,8 +8,6 @@ __________
 
 Din opgave er at angive cirkelens farve ved at trykke på en af de fire vandrette knapper på response_box_cedrus.
 
-Placér din venstre langfinger på den venstre knap, venstre pegefinger på den anden knap fra venstre, højre pegefinger på den tredje knap fra venstre og højre langfinger på den højre knap.
-
 Fra venstre mod højre er knapfarverne {C0}, {C1}, {C2} og {C3}. Farve-tast-tilknytningen vises også ved farverne på knapperne.
 
 Rækkefølgen af farverne i forhold til knapperne vises under cirklen.

@@ -8,7 +8,7 @@ __________
 
 Din opgave er at angive cirkelens farve ved at trykke på en af de fire taster på self-made-response-box.
 
-Placér først begge hænder naturligt på response boxen: spred venstre hånds fingre let og hvil dem på de fem taster i venstre side, og gør det samme med højre hånds fingre på de fem taster i højre side. Placér derefter din venstre langfinger på den venstre tast, venstre pegefinger på den anden tast fra venstre, højre pegefinger på den anden tast fra højre og højre langfinger på den højre tast.
+Placér begge hænder naturligt på response boxen: spred venstre hånds fingre let og hvil dem på de fem taster i venstre side, og gør det samme med højre hånds fingre på de fem taster i højre side.
 
 Farverne for din venstre langfinger, venstre pegefinger, højre langfinger og højre pegefinger er {C0}, {C1}, {C2} og {C3}. Altså er venstre {C0}, anden fra venstre er {C1}, højre er {C2}, og anden fra højre er {C3}. Farve-tast-tilknytningen vises også ved farverne på tasterne.
 
