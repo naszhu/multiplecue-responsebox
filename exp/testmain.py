@@ -12,6 +12,7 @@ Display flow (win.flip locations):
 """
 import math
 import random
+import re
 import time
 import json
 import csv
@@ -319,6 +320,38 @@ def _apply_color_mapping_to_instruction(text: str, mapping: str) -> str:
     return text.format(C0=c0, C1=c1, C2=c2, C3=c3)
 
 
+def _tk_yes_no(title: str, message: str) -> bool:
+    """Yes/no prompt via tkinter (avoids PsychoPy wx second-dialog crash)."""
+    import tkinter as tk
+    from tkinter import messagebox
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+    except tk.TclError:
+        pass
+    answer = messagebox.askyesno(title, message, parent=root)
+    root.destroy()
+    return bool(answer)
+
+
+def _tk_ask_string(title: str, message: str) -> str | None:
+    """Text prompt via tkinter (avoids PsychoPy wx second-dialog crash)."""
+    import tkinter as tk
+    from tkinter import simpledialog
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+    except tk.TclError:
+        pass
+    value = simpledialog.askstring(title, message, parent=root)
+    root.destroy()
+    return value
+
+
 def _resolve_data_output_paths(
     participant: str, session: int, out_dir: Path
 ) -> tuple[Path, Path, str, str, str]:
@@ -333,16 +366,16 @@ def _resolve_data_output_paths(
     if not trials_path.exists() and not metadata_path.exists():
         return trials_path, metadata_path, base_stem, "", ""
 
-    repeat_dlg = gui.Dlg(title="Participant data already exists")
-    repeat_dlg.addText(
-        f"Data already exists for participant {participant}, session {session}.\n\n"
-        "To continue anyway, enter a reason below and click OK."
+    reason = _tk_ask_string(
+        "Participant data already exists",
+        (
+            f"Data already exists for participant {participant}, session {session}.\n\n"
+            "To continue anyway, enter a reason:"
+        ),
     )
-    repeat_dlg.addField("Reason (required)", initial="")
-    repeat_dlg.show()
-    if not repeat_dlg.OK:
+    if reason is None:
         raise SystemExit("Repeat run cancelled.")
-    reason = str(repeat_dlg.data[0]).strip()
+    reason = reason.strip()
     if not reason:
         raise SystemExit("A reason is required to overwrite existing participant data.")
 
@@ -357,16 +390,58 @@ def _resolve_data_output_paths(
         suffix_n += 1
 
 
+def _max_completed_session(participant: str, out_dir: Path) -> int | None:
+    """Highest session number found in data_written for this participant, or None."""
+    prefix = f"CCRP_subj{participant}_ses"
+    max_session = None
+    if not out_dir.is_dir():
+        return None
+    for path in out_dir.iterdir():
+        if not path.is_file() or not path.name.startswith(prefix):
+            continue
+        match = re.match(r"^(\d+)", path.name[len(prefix):])
+        if match:
+            session_num = int(match.group(1))
+            max_session = session_num if max_session is None else max(max_session, session_num)
+    return max_session
+
+
+def _suggested_next_session(participant: str, out_dir: Path) -> int:
+    """Next session to run: 1 if no prior data, else highest existing session + 1."""
+    max_session = _max_completed_session(participant, out_dir)
+    return 1 if max_session is None else max_session + 1
+
+
+def _confirm_unexpected_session(participant: str, session: int, out_dir: Path) -> None:
+    """If entered session differs from inferred next session, require explicit confirmation."""
+    expected = _suggested_next_session(participant, out_dir)
+    if session == expected:
+        return
+    if not _tk_yes_no(
+        "Confirm session number",
+        (
+            f"From reading your data, it seems that your next session number is {expected}.\n\n"
+            f"You entered session {session}. Are you sure you want to continue?"
+        ),
+    ):
+        raise SystemExit("Session confirmation cancelled.")
+
+
 # Session dialog: run one session per launch (6+ uses experimental config: 8 blocks × 50 trials)
+DATA_OUT_DIR = (EXP_DIR / "data_written").resolve()
+_dialog_default_participant = (
+    DEFAULT_PARTICIPANT if DEFAULT_PARTICIPANT in PARTICIPANT_CHOICES else "1"
+)
+_dialog_default_session = _suggested_next_session(_dialog_default_participant, DATA_OUT_DIR)
 PARTICIPATION_DAY_LABEL_TO_NUM = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4}
 session_dlg = gui.Dlg(title="CCRP Session")
 session_dlg.addField(
     "Participant",
-    initial=DEFAULT_PARTICIPANT if DEFAULT_PARTICIPANT in PARTICIPANT_CHOICES else "1",
+    initial=_dialog_default_participant,
     choices=PARTICIPANT_CHOICES,
 )
 session_dlg.addText("— Participant: fill in the fields below —")
-session_dlg.addField("Session", initial=1)
+session_dlg.addField("Session", initial=_dialog_default_session)
 session_dlg.addField(
     "First session of day?",
     initial="yes",
@@ -446,9 +521,9 @@ if DEVICE_NAME not in DEVICE_NAME_CHOICES:
 COLOR_MAP_LAYOUT = session_dlg.data[12]  # "horizontal" or "keyboard"
 MONITOR_NAME = str(session_dlg.data[13]).strip() or MONITOR_NAME
 
-_out_dir = (EXP_DIR / "data_written").resolve()
+_confirm_unexpected_session(PARTICIPANT, SESSION, DATA_OUT_DIR)
 _out_trials_path, _out_metadata_path, DATA_FILE_STEM, REPEAT_DATA_NOTE, REPEAT_REASON = _resolve_data_output_paths(
-    PARTICIPANT, SESSION, _out_dir
+    PARTICIPANT, SESSION, DATA_OUT_DIR
 )
 
 
@@ -1393,7 +1468,7 @@ if completed_normally:
     # Initialize cumulative reward and trial data log
     cum_reward = 0.0
     trial_index = 0
-    out_dir = _out_dir
+    out_dir = DATA_OUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     out_trials_path = _out_trials_path
     out_metadata_path = _out_metadata_path
