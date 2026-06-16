@@ -38,7 +38,7 @@ RESPONSE_DEVICE_SELF_MADE = "self-made-response-box"
 
 ############################# TO MODIFY BELOW
 DEBUG_CONFIG = {
-    "enabled": True,
+    "enabled": False,
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
     "auto_advance_instructions": False,
     "auto_respond": False,
@@ -49,11 +49,17 @@ DEBUG_CONFIG = {
 DEFAULT_PARTICIPANT = "3"
 DEFAULT_MONITOR_NAME = "room1_a4"
 DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_SELF_MADE
-# Physical unit ID: KB=keyboard, RB=Cedrus response box, SRB1–SRB3=self-made boxes.
-DEVICE_NAME_CHOICES = ["KB", "RB", "SRB1", "SRB2", "SRB3"]
+# Physical unit ID: KB=keyboard, RB=Cedrus response box, SRB1–SRB6=self-made boxes.
+DEVICE_NAME_CHOICES = ["KB", "RB", "SRB1", "SRB2", "SRB3", "SRB4", "SRB5", "SRB6"]
+DEVICE_NAME_AUTO_CHOICE = "as assigned"
+DEVICE_NAME_DIALOG_CHOICES = [DEVICE_NAME_AUTO_CHOICE] + DEVICE_NAME_CHOICES
 DEFAULT_DEVICE_NAME = "SRB1"
+if DEFAULT_DEVICE_NAME not in DEVICE_NAME_CHOICES:
+    raise ValueError(
+        f"DEFAULT_DEVICE_NAME must be one of {DEVICE_NAME_CHOICES!r}; got {DEFAULT_DEVICE_NAME!r}."
+    )
 ############################# TO MODIFY ABOVE
-CODE_VERSION = "v4-2026-06-10"
+CODE_VERSION = "v5-2026-06-15"
 
 ############################# COUNTERBALANCE / DATA POLICY
 PRODUCTION_START_PARTICIPANT = 8  # IDs 1–7 pilot → rgby; ID 8+ mapping from CSV
@@ -264,6 +270,20 @@ def _resolve_color_key_mapping_from_dialog(
     return assigned, used, used != assigned
 
 
+def _resolve_device_name_from_dialog(dialog_choice: str) -> tuple[str, str, bool]:
+    """Return (assigned_name, used_name, overridden)."""
+    assigned = DEFAULT_DEVICE_NAME
+    choice = str(dialog_choice).strip()
+    if choice.lower() == DEVICE_NAME_AUTO_CHOICE.lower():
+        return assigned, assigned, False
+    if choice not in DEVICE_NAME_CHOICES:
+        raise SystemExit(
+            f"Device name must be '{DEVICE_NAME_AUTO_CHOICE}' or one of {DEVICE_NAME_CHOICES!r}; "
+            f"got {choice!r}."
+        )
+    return assigned, choice, choice != assigned
+
+
 def _build_device_color_maps(mapping: str) -> tuple[list[int], dict[str, int], dict[str, int]]:
     slot_to_color_id = _slot_color_ids(mapping)
     cedrus_button_to_color_id = {
@@ -472,9 +492,9 @@ session_dlg.addField(
 )
 session_dlg.addField(
     "Device name",
-    initial=DEFAULT_DEVICE_NAME,
-    choices=DEVICE_NAME_CHOICES,
-    tip="Physical unit: KB=keyboard, RB=Cedrus box, SRB1–SRB3=self-made response boxes.",
+    initial=DEVICE_NAME_AUTO_CHOICE,
+    choices=DEVICE_NAME_DIALOG_CHOICES,
+    tip="Default uses DEFAULT_DEVICE_NAME from code. Pick KB/RB/SRB1–6 only to override.",
 )
 session_dlg.addField(
     "Color map layout",
@@ -513,11 +533,9 @@ SLOT_TO_COLOR_ID, CEDRUS_BUTTON_TO_COLOR_ID, SELF_MADE_PIN_TO_COLOR_ID = _build_
     COLOR_KEY_MAPPING
 )
 RESPONSE_DEVICE = session_dlg.data[10]
-DEVICE_NAME = str(session_dlg.data[11]).strip()
-if DEVICE_NAME not in DEVICE_NAME_CHOICES:
-    raise SystemExit(
-        f"Device name must be one of {DEVICE_NAME_CHOICES!r}; got {DEVICE_NAME!r}."
-    )
+DEVICE_NAME_ASSIGNED, DEVICE_NAME, DEVICE_NAME_OVERRIDDEN = _resolve_device_name_from_dialog(
+    session_dlg.data[11]
+)
 COLOR_MAP_LAYOUT = session_dlg.data[12]  # "horizontal" or "keyboard"
 MONITOR_NAME = str(session_dlg.data[13]).strip() or MONITOR_NAME
 
@@ -665,7 +683,7 @@ DAT_COLUMN_DESCRIPTIONS = {
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
     "ColorKeyMapping": "Four-character mapping for response slots 0–3 left-to-right: each letter is r, g, b, or y.",
     "ResponseDevice": "Response input device used for this run: keyboard, response_box_cedrus, or self-made-response-box.",
-    "DeviceName": "Physical response unit ID from the session dialog: KB, RB, SRB1, SRB2, or SRB3.",
+    "DeviceName": "Physical response unit ID: KB, RB, SRB1–SRB6 (from code default or dialog override).",
     "Subject": "Participant ID from the session dialog.",
     "Handedness": "Participant handedness from the session dialog.",
     "ColorVision": "Participant color vision status from the session dialog.",
@@ -818,6 +836,9 @@ def _build_metadata(
             "full_screen": "Y" if DEBUG_CONFIG.get("full_screen", True) else "N",
             "response_device": RESPONSE_DEVICE,
             "device_name": DEVICE_NAME,
+            "device_name_assigned": DEVICE_NAME_ASSIGNED,
+            "device_name_overridden": DEVICE_NAME_OVERRIDDEN,
+            "default_device_name_in_code": DEFAULT_DEVICE_NAME,
             "response_keys": [k.upper() for k in response_keys],
             "response_box_cedrus_buttons": dict(CEDRUS_BUTTON_TO_COLOR_ID),
             "self_made_response_box_pins": dict(SELF_MADE_PIN_TO_COLOR_ID),
