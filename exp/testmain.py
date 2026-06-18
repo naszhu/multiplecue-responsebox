@@ -59,7 +59,7 @@ if DEFAULT_DEVICE_NAME not in DEVICE_NAME_CHOICES:
         f"DEFAULT_DEVICE_NAME must be one of {DEVICE_NAME_CHOICES!r}; got {DEFAULT_DEVICE_NAME!r}."
     )
 ############################# TO MODIFY ABOVE
-CODE_VERSION = "v5-2026-06-15"
+CODE_VERSION = "v6-2026-06-18"
 
 ############################# COUNTERBALANCE / DATA POLICY
 PRODUCTION_START_PARTICIPANT = 8  # IDs 1–7 pilot → rgby; ID 8+ mapping from CSV
@@ -672,6 +672,7 @@ def _build_trial_row(
         "TrialWallClockTime": trial_wall_clock_str,
         "SessionElapsedSec": round(session_elapsed_sec, 3),
         "Note": trial_note,
+        "MonitorName": MONITOR_NAME,
     }
 
 
@@ -725,6 +726,7 @@ DAT_COLUMN_DESCRIPTIONS = {
     "TrialWallClockTime": "Local wall-clock date and time when this trial row was logged (YYYY-MM-DD HH:MM:SS.mmm).",
     "SessionElapsedSec": "Seconds since session timing start (monotonic clock), from immediately before the first trial loop iteration after instructions.",
     "Note": "Free-text notes (e.g. escape path); usually empty.",
+    "MonitorName": "Monitor/computer name from the session dialog (e.g. room1_a1–room1_a10).",
 }
 
 
