@@ -18,7 +18,6 @@ DATA_DIR = Path(__file__).resolve().parent
 RE_FILE = re.compile(r"^CCRP_subj(.+?)_ses(\d+)_trials\.csv$", re.IGNORECASE)
 RE_STD = re.compile(r"^CCRP_subj(\d+)_ses(\d+)_trials\.csv$", re.IGNORECASE)
 RE_LEAD_DIGITS = re.compile(r"^(\d+)")
-NUM_SESSIONS = 17
 REWARD_COL = "CumReward"
 OUT_CSV = "pay.csv"
 
@@ -158,7 +157,10 @@ def build_pay_table(
     row_labels: list[str] = []
     table_rows: list[list[str]] = []
 
-    for session in range(1, NUM_SESSIONS + 1):
+    standard_sessions = sorted(
+        session for session, variant in rewards if variant == ""
+    )
+    for session in standard_sessions:
         row_labels.append(str(session))
         table_rows.append(row_for_session(session, ""))
 
