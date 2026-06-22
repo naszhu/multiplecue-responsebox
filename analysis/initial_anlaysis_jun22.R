@@ -148,3 +148,143 @@ fig_file <- file.path(fig_dir, "rt_difference_by_device_multi_device_subjects.pn
 ggsave(filename = fig_file, plot = rt_difference_plot, width = 16, height = 12, dpi = 300)
 cat("Saved ", fig_file, "\n", sep = "")
 print(as.data.frame(summary_df), row.names = FALSE)
+
+# ------------------------------------------------------------
+# RT difference by device, pooled across all subjects
+# ------------------------------------------------------------
+all_rt_difference_df <- combined_df %>%
+  mutate(
+    SubjectNum = suppressWarnings(as.integer(Subject)),
+    SessionNum = suppressWarnings(as.integer(Session)),
+    RTDifferenceNum = suppressWarnings(as.numeric(RTDifference))
+  )
+
+device_counts_all <- all_rt_difference_df %>%
+  group_by(DeviceName) %>%
+  summarize(
+    n_sessions = n_distinct(Subject, SessionNum),
+    n_subjects = n_distinct(Subject),
+    .groups = "drop"
+  )
+
+device_summary_df <- all_rt_difference_df %>%
+  filter(!is.na(RTDifferenceNum)) %>%
+  group_by(DeviceName) %>%
+  summarize(
+    mean_rt_difference = mean(RTDifferenceNum),
+    sd_rt_difference = sd(RTDifferenceNum),
+    n_trials = n(),
+    .groups = "drop"
+  ) %>%
+  left_join(device_counts_all, by = "DeviceName") %>%
+  mutate(
+    DeviceLabel = paste0(DeviceName, "(n=", n_sessions, ")"),
+    DeviceLabel = factor(DeviceLabel, levels = DeviceLabel[order(DeviceName)])
+  )
+
+if (nrow(device_summary_df) == 0) {
+  stop("No numeric RTDifference values found for all-subjects device summary.")
+}
+
+rt_difference_all_devices_plot <- ggplot(device_summary_df, aes(x = DeviceLabel, y = mean_rt_difference)) +
+  geom_hline(yintercept = 0, color = "gray55", linewidth = 0.5) +
+  geom_col(fill = "#4C78A8", width = 0.65, alpha = 0.85) +
+  geom_errorbar(
+    aes(
+      ymin = mean_rt_difference - sd_rt_difference,
+      ymax = mean_rt_difference + sd_rt_difference
+    ),
+    width = 0.18,
+    linewidth = 0.9
+  ) +
+  geom_point(size = 5, color = "#D95F02") +
+  labs(
+    title = "Mean RT Difference by Device (All Subjects)",
+    subtitle = "Pooled across all subjects; error bars show +/- 1 SD; x-axis labels show session count per device",
+    x = "Device",
+    y = "RT difference (ms)"
+  ) +
+  theme_minimal(base_size = 28) +
+  theme(
+    plot.title = element_text(size = 34, face = "bold"),
+    plot.subtitle = element_text(size = 26),
+    axis.title = element_text(size = 28, face = "bold"),
+    axis.text = element_text(size = 24),
+    axis.text.x = element_text(angle = 25, hjust = 1, size = 24),
+    axis.text.y = element_text(size = 24)
+  )
+
+print(rt_difference_all_devices_plot)
+
+all_devices_fig_file <- file.path(fig_dir, "rt_difference_by_device_all_subjects.png")
+ggsave(filename = all_devices_fig_file, plot = rt_difference_all_devices_plot, width = 16, height = 10, dpi = 300)
+cat("Saved ", all_devices_fig_file, "\n", sep = "")
+print(as.data.frame(device_summary_df), row.names = FALSE)
+
+# ------------------------------------------------------------
+# RT difference by MonitorName, pooled across all subjects
+# ------------------------------------------------------------
+monitor_rt_df <- all_rt_difference_df %>%
+  filter(!is.na(MonitorName), trimws(MonitorName) != "")
+
+monitor_counts_all <- monitor_rt_df %>%
+  group_by(MonitorName) %>%
+  summarize(
+    n_sessions = n_distinct(Subject, SessionNum),
+    n_subjects = n_distinct(Subject),
+    .groups = "drop"
+  )
+
+monitor_summary_df <- monitor_rt_df %>%
+  filter(!is.na(RTDifferenceNum)) %>%
+  group_by(MonitorName) %>%
+  summarize(
+    mean_rt_difference = mean(RTDifferenceNum),
+    sd_rt_difference = sd(RTDifferenceNum),
+    n_trials = n(),
+    .groups = "drop"
+  ) %>%
+  left_join(monitor_counts_all, by = "MonitorName") %>%
+  mutate(
+    MonitorLabel = paste0(MonitorName, "(n=", n_sessions, ")"),
+    MonitorLabel = factor(MonitorLabel, levels = MonitorLabel[order(MonitorName)])
+  )
+
+if (nrow(monitor_summary_df) == 0) {
+  stop("No numeric RTDifference values found for MonitorName summary.")
+}
+
+rt_difference_by_monitor_plot <- ggplot(monitor_summary_df, aes(x = MonitorLabel, y = mean_rt_difference)) +
+  geom_hline(yintercept = 0, color = "gray55", linewidth = 0.5) +
+  geom_col(fill = "#4C78A8", width = 0.65, alpha = 0.85) +
+  geom_errorbar(
+    aes(
+      ymin = mean_rt_difference - sd_rt_difference,
+      ymax = mean_rt_difference + sd_rt_difference
+    ),
+    width = 0.18,
+    linewidth = 0.9
+  ) +
+  geom_point(size = 5, color = "#D95F02") +
+  labs(
+    title = "Mean RT Difference by Monitor (All Subjects)",
+    subtitle = "Pooled across all subjects; error bars show +/- 1 SD; x-axis labels show session count per monitor",
+    x = "Monitor",
+    y = "RT difference (ms)"
+  ) +
+  theme_minimal(base_size = 28) +
+  theme(
+    plot.title = element_text(size = 34, face = "bold"),
+    plot.subtitle = element_text(size = 26),
+    axis.title = element_text(size = 28, face = "bold"),
+    axis.text = element_text(size = 24),
+    axis.text.x = element_text(angle = 25, hjust = 1, size = 24),
+    axis.text.y = element_text(size = 24)
+  )
+
+print(rt_difference_by_monitor_plot)
+
+monitor_fig_file <- file.path(fig_dir, "rt_difference_by_monitor_all_subjects.png")
+ggsave(filename = monitor_fig_file, plot = rt_difference_by_monitor_plot, width = 16, height = 10, dpi = 300)
+cat("Saved ", monitor_fig_file, "\n", sep = "")
+print(as.data.frame(monitor_summary_df), row.names = FALSE)
