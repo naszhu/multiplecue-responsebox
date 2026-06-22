@@ -49,10 +49,16 @@ def parse_standard_trial_file(path: Path) -> TrialFile | None:
 
 def discover_trial_files(data_dir: Path) -> list[TrialFile]:
     files: list[TrialFile] = []
-    for path in sorted(data_dir.glob("CCRP_subj*_ses*_trials.csv")):
-        parsed = parse_standard_trial_file(path)
-        if parsed is not None:
-            files.append(parsed)
+    seen: set[Path] = set()
+    for pattern in ("sub*/CCRP_subj*_ses*_trials.csv", "CCRP_subj*_ses*_trials.csv"):
+        for path in sorted(data_dir.glob(pattern)):
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            parsed = parse_standard_trial_file(path)
+            if parsed is not None:
+                files.append(parsed)
     return files
 
 

@@ -18,6 +18,7 @@ DATA_DIR = Path(__file__).resolve().parent
 RE_FILE = re.compile(r"^CCRP_subj(.+?)_ses(\d+)_trials\.csv$", re.IGNORECASE)
 RE_STD = re.compile(r"^CCRP_subj(\d+)_ses(\d+)_trials\.csv$", re.IGNORECASE)
 RE_LEAD_DIGITS = re.compile(r"^(\d+)")
+NUM_SESSIONS = 17
 REWARD_COL = "CumReward"
 OUT_CSV = "pay.csv"
 
@@ -87,20 +88,9 @@ def last_cum_reward(path: Path) -> float | None:
     return float(rows[-1][REWARD_COL])
 
 
-def iter_trial_csv_paths(data_dir: Path):
-    """Yield trial CSV paths from subject subfolders (and legacy root files)."""
-    seen: set[Path] = set()
-    for pattern in ("sub*/CCRP_subj*_ses*_trials.csv", "CCRP_subj*_ses*_trials.csv"):
-        for path in sorted(data_dir.glob(pattern)):
-            resolved = path.resolve()
-            if resolved not in seen:
-                seen.add(resolved)
-                yield path
-
-
 def discover_trial_files(data_dir: Path) -> list[TrialFile]:
     files: list[TrialFile] = []
-    for path in iter_trial_csv_paths(data_dir):
+    for path in sorted(data_dir.glob("*trials.csv")):
         parsed = parse_trial_file(path)
         if parsed is not None:
             files.append(parsed)
@@ -168,10 +158,7 @@ def build_pay_table(
     row_labels: list[str] = []
     table_rows: list[list[str]] = []
 
-    standard_sessions = sorted(
-        session for session, variant in rewards if variant == ""
-    )
-    for session in standard_sessions:
+    for session in range(1, NUM_SESSIONS + 1):
         row_labels.append(str(session))
         table_rows.append(row_for_session(session, ""))
 

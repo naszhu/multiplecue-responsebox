@@ -8,7 +8,8 @@ fig_dir <- file.path("analysis", "fig")
 
 dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 
-root_csv_files <- list.files(data_dir, pattern = "\\.csv$", full.names = TRUE, recursive = FALSE)
+root_csv_files <- list.files(data_dir, pattern = "\\.csv$", full.names = TRUE, recursive = TRUE)
+root_csv_files <- root_csv_files[grepl("/sub[^/]+/CCRP_subj", root_csv_files, perl = TRUE)]
 processed_csv_files <- list.files(processed_dir, pattern = "\\.csv$", full.names = TRUE, recursive = FALSE)
 csv_files <- c(root_csv_files, processed_csv_files)
 
