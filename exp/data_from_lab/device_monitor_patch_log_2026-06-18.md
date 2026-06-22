@@ -225,3 +225,43 @@ sub13/CCRP_subj13_ses5_trials.csv -- DeviceName -- from 'KB' -- to 'SRB6'
 sub13/CCRP_subj13_ses5_metadata.json -- device_name -- from 'KB' -- to 'SRB6'
 sub13/CCRP_subj13_ses6_trials.csv -- DeviceName -- from 'KB' -- to 'SRB6'
 sub13/CCRP_subj13_ses6_metadata.json -- device_name -- from 'KB' -- to 'SRB6'
+
+# MonitorName from metadata (2026-06-22T10:35:41)
+
+Mode: dry-run | script: attach_monitor_from_metadata.py
+
+Patched MonitorName from metadata.json for all session data in: /sub11;/sub12;/sub13;/sub14;/sub16;/sub18;/sub19;/sub2;/sub20;/sub21;/sub22;/sub24;/sub3;/sub33333;/sub4;/sub5;/sub6;/sub7;/sub8
+MonitorName already present (not overwritten) in: /sub10;/sub11;/sub12;/sub13;/sub14;/sub15;/sub18;/sub19;/sub20;/sub21;/sub22;/sub23;/sub24;/sub25;/sub26;/sub27;/sub30;/sub31;/sub32;/sub8;/sub9
+WARN sub11/CCRP_subj11_ses17_metadata.json: metadata file is empty
+WARN sub19/CCRP_subj19_ses10_metadata.json: metadata file is empty
+WARN sub19/CCRP_subj19_ses11_metadata.json: metadata file is empty
+WARN sub19/CCRP_subj19_ses8_metadata.json: metadata file is empty
+WARN sub19/CCRP_subj19_ses9_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses1_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses2_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses3_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses4_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses5_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses6_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses7_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses8_metadata.json: metadata file is empty
+
+# MonitorName from metadata (2026-06-22T10:35:42)
+
+Mode: apply | script: attach_monitor_from_metadata.py
+
+Patched MonitorName from metadata.json for all session data in: /sub11;/sub12;/sub13;/sub14;/sub16;/sub18;/sub19;/sub2;/sub20;/sub21;/sub22;/sub24;/sub3;/sub33333;/sub4;/sub5;/sub6;/sub7;/sub8
+MonitorName already present (not overwritten) in: /sub10;/sub11;/sub12;/sub13;/sub14;/sub15;/sub18;/sub19;/sub20;/sub21;/sub22;/sub23;/sub24;/sub25;/sub26;/sub27;/sub30;/sub31;/sub32;/sub8;/sub9
+WARN sub11/CCRP_subj11_ses17_metadata.json: metadata file is empty
+WARN sub19/CCRP_subj19_ses10_metadata.json: metadata file is empty
+WARN sub19/CCRP_subj19_ses11_metadata.json: metadata file is empty
+WARN sub19/CCRP_subj19_ses8_metadata.json: metadata file is empty
+WARN sub19/CCRP_subj19_ses9_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses1_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses2_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses3_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses4_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses5_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses6_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses7_metadata.json: metadata file is empty
+WARN sub27/CCRP_subj27_ses8_metadata.json: metadata file is empty
