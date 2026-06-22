@@ -208,3 +208,20 @@ sub10/CCRP_subj10_ses17_trials.csv -- MonitorName -- from '' -- to 'room1_a4'
 sub8/CCRP_subj8_ses998_trials.csv -- MonitorName -- from '' -- to 'room1_a3'
 MISMATCH sub8/CCRP_subj8_ses998_metadata.json -- monitor_name in data 'room1_a4' -- Sheet6 says 'a3' (applied Sheet6)
 sub8/CCRP_subj8_ses998_metadata.json -- monitor_name -- from 'room1_a4' -- to 'room1_a3'
+
+# Manual patch (2026-06-22T) — sub13 sessions 1–6 on 2026-06-11
+# Resolves prior UNMATCHED entries (no Sheet6 row); KB was logged in dialog but unit was SRB6.
+Mode: manual | Targets: 12 | applied: 12
+
+sub13/CCRP_subj13_ses1_trials.csv -- DeviceName -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses1_metadata.json -- device_name -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses2_trials.csv -- DeviceName -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses2_metadata.json -- device_name -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses3_trials.csv -- DeviceName -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses3_metadata.json -- device_name -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses4_trials.csv -- DeviceName -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses4_metadata.json -- device_name -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses5_trials.csv -- DeviceName -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses5_metadata.json -- device_name -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses6_trials.csv -- DeviceName -- from 'KB' -- to 'SRB6'
+sub13/CCRP_subj13_ses6_metadata.json -- device_name -- from 'KB' -- to 'SRB6'
