@@ -265,3 +265,14 @@ WARN sub27/CCRP_subj27_ses5_metadata.json: metadata file is empty
 WARN sub27/CCRP_subj27_ses6_metadata.json: metadata file is empty
 WARN sub27/CCRP_subj27_ses7_metadata.json: metadata file is empty
 WARN sub27/CCRP_subj27_ses8_metadata.json: metadata file is empty
+
+# Manual patch (2026-06-22T) — sub8 sessions 10, 13, 17 on 2026-06-11
+# Resolves prior UNMATCHED entries; KB was logged in dialog but unit was SRB1 (same day as other SRB1 sessions).
+Mode: manual | Targets: 6 | applied: 6
+
+sub8/CCRP_subj8_ses10_trials.csv -- DeviceName -- from 'KB' -- to 'SRB1'
+sub8/CCRP_subj8_ses10_metadata.json -- device_name -- from 'KB' -- to 'SRB1'
+sub8/CCRP_subj8_ses13_trials.csv -- DeviceName -- from 'KB' -- to 'SRB1'
+sub8/CCRP_subj8_ses13_metadata.json -- device_name -- from 'KB' -- to 'SRB1'
+sub8/CCRP_subj8_ses17_trials.csv -- DeviceName -- from 'KB' -- to 'SRB1'
+sub8/CCRP_subj8_ses17_metadata.json -- device_name -- from 'KB' -- to 'SRB1'
