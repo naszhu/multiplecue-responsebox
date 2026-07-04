@@ -22,7 +22,7 @@ RAW_DATA_DIR = DATA_DIR / "raw_data"
 COPY_LOG = DATA_DIR / "log_copy_from_raw.md"
 
 RE_CCRP = re.compile(
-    r"^CCRP_subj(.+?)_ses\d+(?:_(?:trials|metadata))?\.(?:csv|json|dat)$",
+    r"^CCRP_subj(.+?)_ses\d+(?:\([^)]+\))?_(?:trials|metadata)(?:_(?:a\d+))?\.(?:csv|json|dat)$",
     re.IGNORECASE,
 )
 
