@@ -921,98 +921,340 @@ if (nrow(two_cue_all_df) == 0) {
       quantile_delta_df <- bind_rows(quantile_delta_list) %>%
         mutate(
           SubjectFacet = factor(SubjectFacet, levels = levels(plot_df$SubjectFacet)),
-          Focal = factor(Focal, levels = focal_levels),
+          Focal = factor(
+            Focal,
+            levels = focal_levels,
+            labels = c(
+              "focal 4  (pairs vs single 4)",
+              "focal 3  (pairs vs single 3)",
+              "focal 2  (pairs vs single 2)"
+            )
+          ),
           Competitor = factor(Competitor, levels = competitor_levels),
-          ContrastLabel = paste0("(", PairCond, ")-(", Focal, ")"),
           QuantileLabel = factor(
             paste0("Q", sprintf("%.0f", 100 * Quantile)),
             levels = paste0("Q", sprintf("%.0f", 100 * quantile_probs))
           )
         )
 
+      # Columns = the 3 focals; rows = subjects. Legend = weaker-cue value in the pair.
       quantile_delta_plot <- ggplot(
         quantile_delta_df,
         aes(x = QuantileLabel, y = DeltaQ, color = Competitor, group = Competitor)
       ) +
         geom_hline(yintercept = 0, color = "gray50", linewidth = 0.7, linetype = "dashed") +
-        geom_line(linewidth = 1.05) +
+        geom_line(linewidth = 1.1) +
         geom_point(size = 2.6) +
         scale_color_manual(
           values = c("1" = "#1B9E77", "2" = "#D95F02", "3" = "#7570B3"),
           breaks = as.character(competitor_levels),
-          labels = paste0("competitor ", competitor_levels),
-          name = NULL
+          labels = c(
+            "1 = weaker cue 1  →  (1,focal) − (focal)",
+            "2 = weaker cue 2  →  (2,focal) − (focal)",
+            "3 = weaker cue 3  →  (3,focal) − (focal)"
+          ),
+          name = "Competitor (weaker cue value)"
         ) +
-        facet_grid(Focal ~ SubjectFacet, scales = "free_y", labeller = labeller(
-          Focal = function(x) paste0("focal ", x)
-        )) +
+        facet_grid(SubjectFacet ~ Focal, scales = "free_y") +
         labs(
           title = paste0("Competitor cost by RT quantile (", sub_tag, ", ", ses_tag, ")"),
-          subtitle = "ΔQ = Q(pair | chose focal) − Q(single focal | chose focal); competition often hits slow RTs more than fast ones",
+          subtitle = paste0(
+            "Columns = focal reward still chosen; ΔQ = Q(pair|chose focal) − Q(single focal|chose focal). ",
+            "Example: focal4 + competitor3 means RT((3,4)|chose4) − RT(4|chose4)."
+          ),
           x = "RT quantile",
           y = "Competitor cost ΔRT at quantile (ms)"
         ) +
         theme_minimal(base_size = plot_base_size) +
         theme(
           plot.title = element_text(size = title_size, face = "bold"),
-          plot.subtitle = element_text(size = subtitle_size),
+          plot.subtitle = element_text(size = subtitle_size * 0.9),
           axis.title = element_text(size = axis_title_size),
-          axis.text = element_text(size = axis_text_size * 0.85),
+          axis.text = element_text(size = axis_text_size * 0.75),
           axis.text.x = element_text(angle = 45, hjust = 1),
-          strip.text = element_text(size = strip_text_size * 0.75, face = "bold"),
+          strip.text.x = element_text(size = strip_text_size * 0.75, face = "bold"),
+          strip.text.y = element_text(size = strip_text_size * 0.65, face = "bold"),
           legend.position = "top",
-          legend.text = element_text(size = axis_text_size, face = "bold")
+          legend.title = element_text(size = axis_text_size, face = "bold"),
+          legend.text = element_text(size = axis_text_size * 0.85, face = "bold")
         )
 
-      # facet_grid(Focal ~ Subject) gets very wide with many subjects; use SubjectFacet wrap with Focal color instead if too many
       n_subj_q <- n_distinct(quantile_delta_df$SubjectFacet)
-      if (n_subj_q > 4) {
-        quantile_delta_plot <- ggplot(
-          quantile_delta_df,
-          aes(x = QuantileLabel, y = DeltaQ, color = Competitor, group = Competitor)
-        ) +
-          geom_hline(yintercept = 0, color = "gray50", linewidth = 0.7, linetype = "dashed") +
-          geom_line(linewidth = 1.05) +
-          geom_point(size = 2.4) +
-          scale_color_manual(
-            values = c("1" = "#1B9E77", "2" = "#D95F02", "3" = "#7570B3"),
-            breaks = as.character(competitor_levels),
-            labels = paste0("c=", competitor_levels),
-            name = NULL
-          ) +
-          facet_grid(Focal ~ SubjectFacet, scales = "free_y", labeller = labeller(
-            Focal = function(x) paste0("focal ", x)
-          )) +
-          labs(
-            title = paste0("Competitor cost by RT quantile (", sub_tag, ", ", ses_tag, ")"),
-            subtitle = "ΔQ = Q(pair | chose focal) − Q(single | chose focal); rows = focal reward",
-            x = "RT quantile",
-            y = "ΔRT at quantile (ms)"
-          ) +
-          theme_minimal(base_size = plot_base_size) +
-          theme(
-            plot.title = element_text(size = title_size, face = "bold"),
-            plot.subtitle = element_text(size = subtitle_size),
-            axis.title = element_text(size = axis_title_size),
-            axis.text = element_text(size = max(10, axis_text_size * 0.55)),
-            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
-            strip.text.x = element_text(size = max(9, strip_text_size * 0.45), face = "bold"),
-            strip.text.y = element_text(size = strip_text_size * 0.7, face = "bold"),
-            legend.position = "top",
-            legend.text = element_text(size = axis_text_size, face = "bold")
-          )
-      }
-
       quantile_file <- file.path(fig_dir, paste0(setting_tag, "_CompetitorCost_QuantileDeltaRT.png"))
       ggsave(
         filename = quantile_file,
         plot = quantile_delta_plot + bold_axes_theme,
-        width = max(20, 3.2 * n_subj_q),
-        height = 16,
+        width = 22,
+        height = max(14, 2.8 * n_subj_q),
         dpi = 300,
         limitsize = FALSE
       )
       message("Saved: ", quantile_file)
+    }
+  }
+
+  # ---- Competitor-cost plots for ACCURACY (mean ΔACC + RT-quantile ΔACC) ----
+  # Same triangle, but outcome is P(chose focal) = mean(ACC).
+  # Mean: ΔACC = P(chose focal | pair) − P(chose focal | single).
+  # Quantile: within each condition, bin trials by RT quantile, then
+  #   ΔACC(Q) = P(chose focal | pair, RT-Q) − P(chose focal | single, RT-Q).
+  acc_cond_df <- plot_df %>%
+    mutate(
+      CondChr = as.character(Condition),
+      CueRespVal = suppressWarnings(as.integer(trimws(CueResponseValue))),
+      CueRank = suppressWarnings(as.integer(trimws(CueRankResponse)))
+    ) %>%
+    filter(CondChr %in% relevant_conds) %>%
+    mutate(
+      IsSingle = CondChr %in% unique(contrast_map$SingleCond),
+      IsPair = CondChr %in% unique(contrast_map$PairCond),
+      FocalFromCond = dplyr::case_when(
+        IsSingle ~ CondChr,
+        IsPair ~ sub("^.*,", "", CondChr),
+        TRUE ~ NA_character_
+      ),
+      # ACC already marks max-reward / high choice; keep explicit focal check as backup
+      ChoseFocal = as.integer(
+        (!is.na(ACC_num) & ACC_num == 1) |
+          (!is.na(CueRank) & CueRank == 1L &
+             !is.na(CueRespVal) & CueRespVal == as.integer(FocalFromCond))
+      )
+    ) %>%
+    filter(!is.na(FocalFromCond), !is.na(ChoseFocal))
+
+  if (nrow(acc_cond_df) == 0) {
+    warning("No trials for accuracy competitor-cost plots.", call. = FALSE)
+  } else {
+    acc_by_cond <- acc_cond_df %>%
+      group_by(SubjectFacet, CondChr) %>%
+      summarize(
+        Accuracy = mean(ChoseFocal, na.rm = TRUE),
+        Trials = n(),
+        AccuracySE = if_else(
+          Trials > 1,
+          sqrt(Accuracy * (1 - Accuracy) / Trials),
+          0
+        ),
+        .groups = "drop"
+      )
+
+    delta_acc_df <- contrast_map %>%
+      tidyr::crossing(SubjectFacet = unique(acc_by_cond$SubjectFacet)) %>%
+      left_join(
+        acc_by_cond %>%
+          select(
+            SubjectFacet,
+            PairCond = CondChr,
+            PairACC = Accuracy,
+            PairN = Trials,
+            PairSE = AccuracySE
+          ),
+        by = c("SubjectFacet", "PairCond")
+      ) %>%
+      left_join(
+        acc_by_cond %>%
+          select(
+            SubjectFacet,
+            SingleCond = CondChr,
+            BaselineACC = Accuracy,
+            BaselineN = Trials,
+            BaselineSE = AccuracySE
+          ),
+        by = c("SubjectFacet", "SingleCond")
+      ) %>%
+      filter(!is.na(PairACC), !is.na(BaselineACC)) %>%
+      mutate(
+        DeltaACC = PairACC - BaselineACC,
+        DeltaSE = sqrt(PairSE^2 + BaselineSE^2),
+        Focal = factor(Focal, levels = focal_levels),
+        Competitor = factor(Competitor, levels = competitor_levels)
+      )
+
+    if (nrow(delta_acc_df) == 0) {
+      warning("Could not form mean competitor-cost ΔACC contrasts.", call. = FALSE)
+    } else {
+      delta_acc_plot <- ggplot(
+        delta_acc_df,
+        aes(x = Competitor, y = DeltaACC, color = Focal, group = Focal)
+      ) +
+        geom_hline(yintercept = 0, color = "gray50", linewidth = 0.7, linetype = "dashed") +
+        geom_line(linewidth = 1.15) +
+        geom_point(size = 3.0) +
+        geom_errorbar(
+          aes(ymin = DeltaACC - DeltaSE, ymax = DeltaACC + DeltaSE),
+          width = 0.12,
+          linewidth = 0.65
+        ) +
+        scale_color_manual(
+          values = focal_colors,
+          breaks = focal_levels,
+          labels = paste0("focal ", focal_levels),
+          name = NULL
+        ) +
+        facet_wrap(~SubjectFacet, ncol = 2, scales = "fixed") +
+        labs(
+          title = paste0("Competitor cost: ΔACC when focal is available (", sub_tag, ", ", ses_tag, ")"),
+          subtitle = "ΔACC = P(chose focal | pair) − P(chose focal | single); triangle: focal4×{1,2,3}, focal3×{1,2}, focal2×{1}",
+          x = "Competitor value c",
+          y = "Competitor cost ΔACC (probability)"
+        ) +
+        theme_minimal(base_size = plot_base_size) +
+        theme(
+          plot.title = element_text(size = title_size, face = "bold"),
+          plot.subtitle = element_text(size = subtitle_size),
+          axis.title = element_text(size = axis_title_size),
+          axis.text = element_text(size = axis_text_size),
+          strip.text = element_text(size = strip_text_size, face = "bold"),
+          legend.position = "top",
+          legend.text = element_text(size = axis_text_size, face = "bold")
+        )
+
+      delta_acc_file <- file.path(fig_dir, paste0(setting_tag, "_CompetitorCost_MeanDeltaACC.png"))
+      ggsave(
+        filename = delta_acc_file,
+        plot = delta_acc_plot + bold_axes_theme,
+        width = 20,
+        height = 24,
+        dpi = 300
+      )
+      message("Saved: ", delta_acc_file)
+    }
+
+    # Quantile ΔACC: P(chose focal) within RT quantile bins, pair − single
+    min_n_acc_q <- 10L
+    quantile_acc_list <- list()
+    subjects_for_acc_q <- unique(as.character(acc_cond_df$SubjectFacet))
+
+    for (subj in subjects_for_acc_q) {
+      subj_df <- acc_cond_df %>%
+        filter(as.character(SubjectFacet) == subj)
+
+      for (i in seq_len(nrow(contrast_map))) {
+        focal <- contrast_map$Focal[i]
+        comp <- contrast_map$Competitor[i]
+        single_cond <- contrast_map$SingleCond[i]
+        pair_cond <- contrast_map$PairCond[i]
+
+        base_df <- subj_df %>% filter(CondChr == single_cond)
+        pair_df <- subj_df %>% filter(CondChr == pair_cond)
+        if (nrow(base_df) < min_n_acc_q || nrow(pair_df) < min_n_acc_q) next
+
+        pooled_rt <- c(base_df$RT_num, pair_df$RT_num)
+        cuts <- as.numeric(stats::quantile(pooled_rt, probs = quantile_probs, names = FALSE, type = 7))
+
+        for (qi in seq_along(quantile_probs)) {
+          qprob <- quantile_probs[qi]
+          if (qi == 1) {
+            lo <- -Inf
+            hi <- cuts[1]
+            base_win <- base_df %>% filter(RT_num <= hi)
+            pair_win <- pair_df %>% filter(RT_num <= hi)
+          } else {
+            lo <- cuts[qi - 1]
+            hi <- cuts[qi]
+            base_win <- base_df %>% filter(RT_num > lo, RT_num <= hi)
+            pair_win <- pair_df %>% filter(RT_num > lo, RT_num <= hi)
+          }
+
+          if (nrow(base_win) < 3 || nrow(pair_win) < 3) next
+
+          base_acc <- mean(base_win$ChoseFocal, na.rm = TRUE)
+          pair_acc <- mean(pair_win$ChoseFocal, na.rm = TRUE)
+
+          quantile_acc_list[[length(quantile_acc_list) + 1L]] <- data.frame(
+            SubjectFacet = subj,
+            Focal = focal,
+            Competitor = comp,
+            PairCond = pair_cond,
+            Quantile = qprob,
+            BaselineACC = base_acc,
+            PairACC = pair_acc,
+            DeltaACC = pair_acc - base_acc,
+            BaselineN = nrow(base_win),
+            PairN = nrow(pair_win),
+            stringsAsFactors = FALSE
+          )
+        }
+      }
+    }
+
+    if (length(quantile_acc_list) == 0) {
+      warning("Could not form quantile competitor-cost ΔACC contrasts.", call. = FALSE)
+    } else {
+      quantile_acc_df <- bind_rows(quantile_acc_list) %>%
+        mutate(
+          SubjectFacet = factor(SubjectFacet, levels = levels(plot_df$SubjectFacet)),
+          Focal = factor(
+            Focal,
+            levels = focal_levels,
+            labels = c(
+              "focal 4  (pairs vs single 4)",
+              "focal 3  (pairs vs single 3)",
+              "focal 2  (pairs vs single 2)"
+            )
+          ),
+          Competitor = factor(Competitor, levels = competitor_levels),
+          QuantileLabel = factor(
+            paste0("Q", sprintf("%.0f", 100 * Quantile)),
+            levels = paste0("Q", sprintf("%.0f", 100 * quantile_probs))
+          )
+        )
+
+      quantile_acc_plot <- ggplot(
+        quantile_acc_df,
+        aes(x = QuantileLabel, y = DeltaACC, color = Competitor, group = Competitor)
+      ) +
+        geom_hline(yintercept = 0, color = "gray50", linewidth = 0.7, linetype = "dashed") +
+        geom_line(linewidth = 1.1) +
+        geom_point(size = 2.6) +
+        scale_color_manual(
+          values = c("1" = "#1B9E77", "2" = "#D95F02", "3" = "#7570B3"),
+          breaks = as.character(competitor_levels),
+          labels = c(
+            "1 = weaker cue 1  →  (1,focal) − (focal)",
+            "2 = weaker cue 2  →  (2,focal) − (focal)",
+            "3 = weaker cue 3  →  (3,focal) − (focal)"
+          ),
+          name = "Competitor (weaker cue value)"
+        ) +
+        facet_grid(SubjectFacet ~ Focal, scales = "free_y") +
+        labs(
+          title = paste0("Competitor cost by RT quantile: accuracy (", sub_tag, ", ", ses_tag, ")"),
+          subtitle = paste0(
+            "Columns = focal reward; ΔACC(Q) = P(chose focal|pair, RT in Q-bin) − P(chose focal|single, RT in Q-bin). ",
+            "Example: focal4 + competitor3 = ACC((3,4)) − ACC(4) within each RT quantile bin."
+          ),
+          x = "RT quantile bin",
+          y = "Competitor cost ΔACC at RT quantile"
+        ) +
+        theme_minimal(base_size = plot_base_size) +
+        theme(
+          plot.title = element_text(size = title_size, face = "bold"),
+          plot.subtitle = element_text(size = subtitle_size * 0.9),
+          axis.title = element_text(size = axis_title_size),
+          axis.text = element_text(size = axis_text_size * 0.75),
+          axis.text.x = element_text(angle = 45, hjust = 1),
+          strip.text.x = element_text(size = strip_text_size * 0.75, face = "bold"),
+          strip.text.y = element_text(size = strip_text_size * 0.65, face = "bold"),
+          legend.position = "top",
+          legend.title = element_text(size = axis_text_size, face = "bold"),
+          legend.text = element_text(size = axis_text_size * 0.85, face = "bold")
+        )
+
+      n_subj_acc_q <- n_distinct(quantile_acc_df$SubjectFacet)
+      quantile_acc_file <- file.path(
+        fig_dir,
+        paste0(setting_tag, "_CompetitorCost_QuantileDeltaACC.png")
+      )
+      ggsave(
+        filename = quantile_acc_file,
+        plot = quantile_acc_plot + bold_axes_theme,
+        width = 22,
+        height = max(14, 2.8 * n_subj_acc_q),
+        dpi = 300,
+        limitsize = FALSE
+      )
+      message("Saved: ", quantile_acc_file)
     }
   }
 }
