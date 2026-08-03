@@ -990,14 +990,158 @@ if (nrow(two_cue_all_df) == 0) {
         limitsize = FALSE
       )
       message("Saved: ", quantile_file)
+
+      # Equal-n RT-bin competitor cost (companion to ACC RT-bin plot):
+      # Within chose-high trials, split each condition into 5 equal-n RT bins,
+      # then ΔRT(bin) = meanRT(pair, bin) − meanRT(single, bin).
+      n_rt_bins_cost <- 5L
+      min_trials_rtbin_cost <- n_rt_bins_cost * 5L
+
+      rtbin_cost_df <- choose_focal_rt_df %>%
+        group_by(SubjectFacet, CondChr) %>%
+        filter(n() >= min_trials_rtbin_cost) %>%
+        mutate(
+          RTBin = ntile(RT_num, n_rt_bins_cost),
+          RTBin = factor(
+            RTBin,
+            levels = 1:n_rt_bins_cost,
+            labels = c("Fastest 20%", "20–40%", "40–60%", "60–80%", "Slowest 20%")
+          )
+        ) %>%
+        ungroup() %>%
+        group_by(SubjectFacet, CondChr, FocalFromCond, IsPair, IsSingle, RTBin) %>%
+        summarize(
+          MeanRT = mean(RT_num, na.rm = TRUE),
+          Trials = n(),
+          RTSE = if_else(Trials > 1, sd(RT_num, na.rm = TRUE) / sqrt(Trials), 0),
+          .groups = "drop"
+        )
+
+      pair_rtbin_cost <- rtbin_cost_df %>%
+        filter(IsPair) %>%
+        mutate(
+          Competitor = as.integer(sub(",.*$", "", CondChr)),
+          HighReward = FocalFromCond
+        ) %>%
+        filter(Competitor %in% competitor_levels, HighReward %in% focal_levels) %>%
+        mutate(
+          SubjectFacet = factor(SubjectFacet, levels = levels(plot_df$SubjectFacet)),
+          HighReward = factor(
+            HighReward,
+            levels = focal_levels,
+            labels = c(
+              "high=4  (pairs vs single 4)",
+              "high=3  (pairs vs single 3)",
+              "high=2  (pairs vs single 2)"
+            )
+          ),
+          Competitor = factor(Competitor, levels = competitor_levels)
+        )
+
+      single_rtbin_cost <- rtbin_cost_df %>%
+        filter(IsSingle) %>%
+        mutate(HighRewardRaw = FocalFromCond) %>%
+        select(
+          SubjectFacet,
+          HighRewardRaw,
+          RTBin,
+          BaselineRT = MeanRT,
+          BaselineN = Trials,
+          BaselineSE = RTSE
+        )
+
+      delta_rtbin_cost_df <- pair_rtbin_cost %>%
+        mutate(HighRewardRaw = as.character(FocalFromCond)) %>%
+        left_join(
+          single_rtbin_cost %>%
+            mutate(SubjectFacet = factor(SubjectFacet, levels = levels(plot_df$SubjectFacet))),
+          by = c("SubjectFacet", "HighRewardRaw", "RTBin")
+        ) %>%
+        filter(!is.na(BaselineRT)) %>%
+        mutate(
+          DeltaRT = MeanRT - BaselineRT,
+          DeltaSE = sqrt(RTSE^2 + BaselineSE^2),
+          ymin = DeltaRT - DeltaSE,
+          ymax = DeltaRT + DeltaSE
+        )
+
+      if (nrow(delta_rtbin_cost_df) == 0) {
+        warning("Could not form equal-n RT-bin competitor-cost ΔRT.", call. = FALSE)
+      } else {
+        rtbin_cost_plot <- ggplot(
+          delta_rtbin_cost_df,
+          aes(x = RTBin, y = DeltaRT, color = Competitor, fill = Competitor, group = Competitor)
+        ) +
+          geom_hline(yintercept = 0, color = "gray50", linewidth = 0.7, linetype = "dashed") +
+          geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.12, color = NA) +
+          geom_line(linewidth = 1.1) +
+          geom_point(size = 2.6) +
+          scale_color_manual(
+            values = c("1" = "#1B9E77", "2" = "#D95F02", "3" = "#7570B3"),
+            breaks = as.character(competitor_levels),
+            labels = c(
+              "1 = weaker cue 1  →  (1,high) − (high)",
+              "2 = weaker cue 2  →  (2,high) − (high)",
+              "3 = weaker cue 3  →  (3,high) − (high)"
+            ),
+            name = "Competitor (weaker cue value)"
+          ) +
+          scale_fill_manual(
+            values = c("1" = "#1B9E77", "2" = "#D95F02", "3" = "#7570B3"),
+            breaks = as.character(competitor_levels),
+            labels = c(
+              "1 = weaker cue 1  →  (1,high) − (high)",
+              "2 = weaker cue 2  →  (2,high) − (high)",
+              "3 = weaker cue 3  →  (3,high) − (high)"
+            ),
+            name = "Competitor (weaker cue value)"
+          ) +
+          facet_grid(SubjectFacet ~ HighReward, scales = "free_y") +
+          labs(
+            title = paste0("Competitor cost ΔRT by equal-n RT bin (", sub_tag, ", ", ses_tag, ")"),
+            subtitle = paste0(
+              "Chose higher reward only. Each condition split into 5 equal-n RT bins (fast→slow). ",
+              "ΔRT = meanRT(pair, bin) − meanRT(single, same relative bin). ",
+              "Example high=4, competitor 3: meanRT((3,4)|chose4) − meanRT(4|chose4) within each bin."
+            ),
+            x = "RT bin (equal-n within condition)",
+            y = "Competitor cost ΔRT (ms)"
+          ) +
+          theme_minimal(base_size = plot_base_size) +
+          theme(
+            plot.title = element_text(size = title_size, face = "bold"),
+            plot.subtitle = element_text(size = subtitle_size * 0.9),
+            axis.title = element_text(size = axis_title_size),
+            axis.text = element_text(size = axis_text_size * 0.7),
+            axis.text.x = element_text(angle = 35, hjust = 1),
+            strip.text.x = element_text(size = strip_text_size * 0.75, face = "bold"),
+            strip.text.y = element_text(size = strip_text_size * 0.65, face = "bold"),
+            legend.position = "top",
+            legend.title = element_text(size = axis_text_size, face = "bold"),
+            legend.text = element_text(size = axis_text_size * 0.85, face = "bold")
+          )
+
+        rtbin_cost_file <- file.path(
+          fig_dir,
+          paste0(setting_tag, "_CompetitorCost_RTbinDeltaRT.png")
+        )
+        ggsave(
+          filename = rtbin_cost_file,
+          plot = rtbin_cost_plot + bold_axes_theme,
+          width = 22,
+          height = max(14, 2.8 * n_distinct(delta_rtbin_cost_df$SubjectFacet)),
+          dpi = 300,
+          limitsize = FALSE
+        )
+        message("Saved: ", rtbin_cost_file)
+      }
     }
   }
 
-  # ---- Competitor-cost plots for ACCURACY (mean ΔACC + RT-quantile ΔACC) ----
-  # Same triangle, but outcome is P(chose focal) = mean(ACC).
-  # Mean: ΔACC = P(chose focal | pair) − P(chose focal | single).
-  # Quantile: within each condition, bin trials by RT quantile, then
-  #   ΔACC(Q) = P(chose focal | pair, RT-Q) − P(chose focal | single, RT-Q).
+  # ---- Competitor-cost plots for ACCURACY (mean ΔACC + RT-bin ACC) ----
+  # Same triangle, but outcome is P(chose high) = mean(ACC).
+  # Mean: ΔACC = P(chose high | pair) − P(chose high | single).
+  # RT-bin: equal-n bins within condition; P(chose high | bin) and ΔACC by bin.
   acc_cond_df <- plot_df %>%
     mutate(
       CondChr = as.character(Condition),
@@ -1013,7 +1157,7 @@ if (nrow(two_cue_all_df) == 0) {
         IsPair ~ sub("^.*,", "", CondChr),
         TRUE ~ NA_character_
       ),
-      # ACC already marks max-reward / high choice; keep explicit focal check as backup
+      # ACC already marks max-reward / high choice; keep explicit high-reward check as backup
       ChoseFocal = as.integer(
         (!is.na(ACC_num) & ACC_num == 1) |
           (!is.na(CueRank) & CueRank == 1L &
@@ -1120,120 +1264,108 @@ if (nrow(two_cue_all_df) == 0) {
       message("Saved: ", delta_acc_file)
     }
 
-    # Quantile ΔACC: P(chose focal) within RT quantile bins, pair − single
-    min_n_acc_q <- 10L
-    quantile_acc_list <- list()
-    subjects_for_acc_q <- unique(as.character(acc_cond_df$SubjectFacet))
+    # ---- Equal-n RT-bin accuracy plots (layout like QuantileDelta) ----
+    # Split each condition's trials into 5 equal-sized RT groups (fast→slow),
+    # then plot P(chose focal | RT bin). This puts similar N in each bin.
+    n_rt_bins <- 5L
+    min_trials_for_bins <- n_rt_bins * 5L  # >=5 trials per bin on average
 
-    for (subj in subjects_for_acc_q) {
-      subj_df <- acc_cond_df %>%
-        filter(as.character(SubjectFacet) == subj)
-
-      for (i in seq_len(nrow(contrast_map))) {
-        focal <- contrast_map$Focal[i]
-        comp <- contrast_map$Competitor[i]
-        single_cond <- contrast_map$SingleCond[i]
-        pair_cond <- contrast_map$PairCond[i]
-
-        base_df <- subj_df %>% filter(CondChr == single_cond)
-        pair_df <- subj_df %>% filter(CondChr == pair_cond)
-        if (nrow(base_df) < min_n_acc_q || nrow(pair_df) < min_n_acc_q) next
-
-        pooled_rt <- c(base_df$RT_num, pair_df$RT_num)
-        cuts <- as.numeric(stats::quantile(pooled_rt, probs = quantile_probs, names = FALSE, type = 7))
-
-        for (qi in seq_along(quantile_probs)) {
-          qprob <- quantile_probs[qi]
-          if (qi == 1) {
-            lo <- -Inf
-            hi <- cuts[1]
-            base_win <- base_df %>% filter(RT_num <= hi)
-            pair_win <- pair_df %>% filter(RT_num <= hi)
-          } else {
-            lo <- cuts[qi - 1]
-            hi <- cuts[qi]
-            base_win <- base_df %>% filter(RT_num > lo, RT_num <= hi)
-            pair_win <- pair_df %>% filter(RT_num > lo, RT_num <= hi)
-          }
-
-          if (nrow(base_win) < 3 || nrow(pair_win) < 3) next
-
-          base_acc <- mean(base_win$ChoseFocal, na.rm = TRUE)
-          pair_acc <- mean(pair_win$ChoseFocal, na.rm = TRUE)
-
-          quantile_acc_list[[length(quantile_acc_list) + 1L]] <- data.frame(
-            SubjectFacet = subj,
-            Focal = focal,
-            Competitor = comp,
-            PairCond = pair_cond,
-            Quantile = qprob,
-            BaselineACC = base_acc,
-            PairACC = pair_acc,
-            DeltaACC = pair_acc - base_acc,
-            BaselineN = nrow(base_win),
-            PairN = nrow(pair_win),
-            stringsAsFactors = FALSE
-          )
-        }
-      }
-    }
-
-    if (length(quantile_acc_list) == 0) {
-      warning("Could not form quantile competitor-cost ΔACC contrasts.", call. = FALSE)
-    } else {
-      quantile_acc_df <- bind_rows(quantile_acc_list) %>%
-        mutate(
-          SubjectFacet = factor(SubjectFacet, levels = levels(plot_df$SubjectFacet)),
-          Focal = factor(
-            Focal,
-            levels = focal_levels,
-            labels = c(
-              "focal 4  (pairs vs single 4)",
-              "focal 3  (pairs vs single 3)",
-              "focal 2  (pairs vs single 2)"
-            )
-          ),
-          Competitor = factor(Competitor, levels = competitor_levels),
-          QuantileLabel = factor(
-            paste0("Q", sprintf("%.0f", 100 * Quantile)),
-            levels = paste0("Q", sprintf("%.0f", 100 * quantile_probs))
-          )
+    acc_rtbin_df <- acc_cond_df %>%
+      group_by(SubjectFacet, CondChr) %>%
+      filter(n() >= min_trials_for_bins) %>%
+      mutate(
+        RTBin = ntile(RT_num, n_rt_bins),
+        RTBin = factor(
+          RTBin,
+          levels = 1:n_rt_bins,
+          labels = c("Fastest 20%", "20–40%", "40–60%", "60–80%", "Slowest 20%")
         )
+      ) %>%
+      ungroup() %>%
+      group_by(SubjectFacet, CondChr, FocalFromCond, IsPair, IsSingle, RTBin) %>%
+      summarize(
+        P_high = mean(ChoseFocal, na.rm = TRUE),
+        Trials = n(),
+        PSE = if_else(Trials > 1, sqrt(P_high * (1 - P_high) / Trials), 0),
+        .groups = "drop"
+      )
 
-      quantile_acc_plot <- ggplot(
-        quantile_acc_df,
-        aes(x = QuantileLabel, y = DeltaACC, color = Competitor, group = Competitor)
+    pair_rtbin_df <- acc_rtbin_df %>%
+      filter(IsPair) %>%
+      mutate(
+        Competitor = as.integer(sub(",.*$", "", CondChr)),
+        FocalRaw = FocalFromCond
+      ) %>%
+      filter(Competitor %in% competitor_levels, FocalRaw %in% focal_levels) %>%
+      mutate(
+        SubjectFacet = factor(SubjectFacet, levels = levels(plot_df$SubjectFacet)),
+        Focal = factor(
+          FocalRaw,
+          levels = focal_levels,
+          labels = c(
+            "high=4  (pairs vs single 4)",
+            "high=3  (pairs vs single 3)",
+            "high=2  (pairs vs single 2)"
+          )
+        ),
+        Competitor = factor(Competitor, levels = competitor_levels),
+        ymin = pmax(0, P_high - PSE),
+        ymax = pmin(1, P_high + PSE)
+      )
+
+    single_rtbin_df <- acc_rtbin_df %>%
+      filter(IsSingle) %>%
+      mutate(Focal = FocalFromCond) %>%
+      select(SubjectFacet, Focal, RTBin, BaselineP = P_high, BaselineN = Trials, BaselineSE = PSE)
+
+    if (nrow(pair_rtbin_df) == 0) {
+      warning("No equal-n RT-bin accuracy data for pair conditions.", call. = FALSE)
+    } else {
+      # Plot 1: absolute P(chose high | RT bin) — pairs only (not a difference)
+      rtbin_acc_plot <- ggplot(
+        pair_rtbin_df,
+        aes(x = RTBin, y = P_high, color = Competitor, fill = Competitor, group = Competitor)
       ) +
-        geom_hline(yintercept = 0, color = "gray50", linewidth = 0.7, linetype = "dashed") +
+        geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.12, color = NA) +
         geom_line(linewidth = 1.1) +
         geom_point(size = 2.6) +
         scale_color_manual(
           values = c("1" = "#1B9E77", "2" = "#D95F02", "3" = "#7570B3"),
           breaks = as.character(competitor_levels),
           labels = c(
-            "1 = weaker cue 1  →  (1,focal) − (focal)",
-            "2 = weaker cue 2  →  (2,focal) − (focal)",
-            "3 = weaker cue 3  →  (3,focal) − (focal)"
+            "1 = weaker cue 1  →  (1,high)",
+            "2 = weaker cue 2  →  (2,high)",
+            "3 = weaker cue 3  →  (3,high)"
+          ),
+          name = "Competitor (weaker cue value)"
+        ) +
+        scale_fill_manual(
+          values = c("1" = "#1B9E77", "2" = "#D95F02", "3" = "#7570B3"),
+          breaks = as.character(competitor_levels),
+          labels = c(
+            "1 = weaker cue 1  →  (1,high)",
+            "2 = weaker cue 2  →  (2,high)",
+            "3 = weaker cue 3  →  (3,high)"
           ),
           name = "Competitor (weaker cue value)"
         ) +
         facet_grid(SubjectFacet ~ Focal, scales = "free_y") +
         labs(
-          title = paste0("Competitor cost by RT quantile: accuracy (", sub_tag, ", ", ses_tag, ")"),
+          title = paste0("P(chose high | RT bin) by competitor (", sub_tag, ", ", ses_tag, ")"),
           subtitle = paste0(
-            "Columns = focal reward; ΔACC(Q) = P(chose focal|pair, RT in Q-bin) − P(chose focal|single, RT in Q-bin). ",
-            "Example: focal4 + competitor3 = ACC((3,4)) − ACC(4) within each RT quantile bin."
+            "Within each two-cue condition, trials split into 5 equal-n RT bins (fast→slow). ",
+            "Y = absolute P(chose higher reward), NOT pair−single. Example high=4: (1,4)/(2,4)/(3,4)."
           ),
-          x = "RT quantile bin",
-          y = "Competitor cost ΔACC at RT quantile"
+          x = "RT bin (equal-n within condition)",
+          y = "P(chose higher reward)"
         ) +
         theme_minimal(base_size = plot_base_size) +
         theme(
           plot.title = element_text(size = title_size, face = "bold"),
           plot.subtitle = element_text(size = subtitle_size * 0.9),
           axis.title = element_text(size = axis_title_size),
-          axis.text = element_text(size = axis_text_size * 0.75),
-          axis.text.x = element_text(angle = 45, hjust = 1),
+          axis.text = element_text(size = axis_text_size * 0.7),
+          axis.text.x = element_text(angle = 35, hjust = 1),
           strip.text.x = element_text(size = strip_text_size * 0.75, face = "bold"),
           strip.text.y = element_text(size = strip_text_size * 0.65, face = "bold"),
           legend.position = "top",
@@ -1241,20 +1373,119 @@ if (nrow(two_cue_all_df) == 0) {
           legend.text = element_text(size = axis_text_size * 0.85, face = "bold")
         )
 
-      n_subj_acc_q <- n_distinct(quantile_acc_df$SubjectFacet)
-      quantile_acc_file <- file.path(
+      n_subj_rtbin <- n_distinct(pair_rtbin_df$SubjectFacet)
+      rtbin_acc_file <- file.path(
         fig_dir,
-        paste0(setting_tag, "_CompetitorCost_QuantileDeltaACC.png")
+        paste0(setting_tag, "_CompetitorCost_RTbinPChooseHigh.png")
       )
       ggsave(
-        filename = quantile_acc_file,
-        plot = quantile_acc_plot + bold_axes_theme,
+        filename = rtbin_acc_file,
+        plot = rtbin_acc_plot + bold_axes_theme,
         width = 22,
-        height = max(14, 2.8 * n_subj_acc_q),
+        height = max(14, 2.8 * n_subj_rtbin),
         dpi = 300,
         limitsize = FALSE
       )
-      message("Saved: ", quantile_acc_file)
+      message("Saved: ", rtbin_acc_file)
+
+      # Plot 2: ΔP(h) at matched equal-n RT bins (pair − single) — like RTbinDeltaRT
+      delta_rtbin_df <- pair_rtbin_df %>%
+        left_join(
+          single_rtbin_df %>%
+            mutate(
+              SubjectFacet = factor(SubjectFacet, levels = levels(plot_df$SubjectFacet)),
+              FocalRaw = as.character(Focal)
+            ) %>%
+            select(SubjectFacet, FocalRaw, RTBin, BaselineP, BaselineN, BaselineSE),
+          by = c("SubjectFacet", "FocalRaw", "RTBin")
+        ) %>%
+        filter(!is.na(BaselineP)) %>%
+        mutate(
+          DeltaACC = P_high - BaselineP,
+          DeltaSE = sqrt(PSE^2 + BaselineSE^2),
+          ymin = DeltaACC - DeltaSE,
+          ymax = DeltaACC + DeltaSE
+        )
+
+      if (nrow(delta_rtbin_df) == 0) {
+        warning("Could not form equal-n RT-bin ΔP(h) contrasts.", call. = FALSE)
+      } else {
+        delta_rtbin_plot <- ggplot(
+          delta_rtbin_df,
+          aes(x = RTBin, y = DeltaACC, color = Competitor, fill = Competitor, group = Competitor)
+        ) +
+          geom_hline(yintercept = 0, color = "gray50", linewidth = 0.7, linetype = "dashed") +
+          geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.12, color = NA) +
+          geom_line(linewidth = 1.1) +
+          geom_point(size = 2.6) +
+          scale_color_manual(
+            values = c("1" = "#1B9E77", "2" = "#D95F02", "3" = "#7570B3"),
+            breaks = as.character(competitor_levels),
+            labels = c(
+              "1 = weaker cue 1  →  (1,high) − (high)",
+              "2 = weaker cue 2  →  (2,high) − (high)",
+              "3 = weaker cue 3  →  (3,high) − (high)"
+            ),
+            name = "Competitor (weaker cue value)"
+          ) +
+          scale_fill_manual(
+            values = c("1" = "#1B9E77", "2" = "#D95F02", "3" = "#7570B3"),
+            breaks = as.character(competitor_levels),
+            labels = c(
+              "1 = weaker cue 1  →  (1,high) − (high)",
+              "2 = weaker cue 2  →  (2,high) − (high)",
+              "3 = weaker cue 3  →  (3,high) − (high)"
+            ),
+            name = "Competitor (weaker cue value)"
+          ) +
+          facet_grid(SubjectFacet ~ Focal, scales = "free_y") +
+          labs(
+            title = paste0("Competitor cost ΔP(chose high) by equal-n RT bin (", sub_tag, ", ", ses_tag, ")"),
+            subtitle = paste0(
+              "Same structure as RTbinDeltaRT. ",
+              "ΔP(h) = P(chose high|pair, bin) − P(chose high|single, same relative bin). ",
+              "Example high=4, competitor 3: P(chose4|(3,4)) − P(chose4|(4)) within each RT bin. ",
+              "Near 0 if accuracy is at ceiling."
+            ),
+            x = "RT bin (equal-n within condition)",
+            y = "Competitor cost ΔP(h) (pair − single)"
+          ) +
+          theme_minimal(base_size = plot_base_size) +
+          theme(
+            plot.title = element_text(size = title_size, face = "bold"),
+            plot.subtitle = element_text(size = subtitle_size * 0.9),
+            axis.title = element_text(size = axis_title_size),
+            axis.text = element_text(size = axis_text_size * 0.7),
+            axis.text.x = element_text(angle = 35, hjust = 1),
+            strip.text.x = element_text(size = strip_text_size * 0.75, face = "bold"),
+            strip.text.y = element_text(size = strip_text_size * 0.65, face = "bold"),
+            legend.position = "top",
+            legend.title = element_text(size = axis_text_size, face = "bold"),
+            legend.text = element_text(size = axis_text_size * 0.85, face = "bold")
+          )
+
+        rtbin_delta_acc_file <- file.path(
+          fig_dir,
+          paste0(setting_tag, "_CompetitorCost_RTbinDeltaACC.png")
+        )
+        ggsave(
+          filename = rtbin_delta_acc_file,
+          plot = delta_rtbin_plot + bold_axes_theme,
+          width = 22,
+          height = max(14, 2.8 * n_distinct(delta_rtbin_df$SubjectFacet)),
+          dpi = 300,
+          limitsize = FALSE
+        )
+        message("Saved: ", rtbin_delta_acc_file)
+
+        # keep old name as a copy for continuity
+        quantile_acc_file <- file.path(
+          fig_dir,
+          paste0(setting_tag, "_CompetitorCost_QuantileDeltaACC.png")
+        )
+        file.copy(rtbin_delta_acc_file, quantile_acc_file, overwrite = TRUE)
+        message("Saved: ", quantile_acc_file)
+      }
     }
   }
 }
