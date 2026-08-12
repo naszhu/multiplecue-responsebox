@@ -1136,6 +1136,93 @@ if (nrow(two_cue_all_df) == 0) {
         message("Saved: ", rtbin_cost_file)
       }
     }
+
+    # Baseline single-cue RT by RT quantile (same facet layout as QuantileDeltaRT)
+  min_n_baseline_q <- 10L
+  baseline_q_list <- list()
+  subjects_for_bq <- unique(as.character(choose_focal_rt_df$SubjectFacet))
+  for (subj in subjects_for_bq) {
+    subj_single <- choose_focal_rt_df %>%
+      filter(as.character(SubjectFacet) == subj, IsSingle)
+    for (high in focal_levels) {
+      rts <- subj_single %>%
+        filter(CondChr == high) %>%
+        pull(RT_num)
+      if (length(rts) < min_n_baseline_q) next
+      qs <- as.numeric(stats::quantile(rts, probs = quantile_probs, names = FALSE, type = 7))
+      for (qi in seq_along(quantile_probs)) {
+        baseline_q_list[[length(baseline_q_list) + 1L]] <- data.frame(
+          SubjectFacet = subj,
+          HighReward = high,
+          Quantile = quantile_probs[qi],
+          BaselineRT = qs[qi],
+          Trials = length(rts),
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+  }
+
+  if (length(baseline_q_list) == 0) {
+    warning("Could not form baseline single-cue RT-by-quantile plot.", call. = FALSE)
+  } else {
+    baseline_q_df <- bind_rows(baseline_q_list) %>%
+      mutate(
+        SubjectFacet = factor(SubjectFacet, levels = levels(plot_df$SubjectFacet)),
+        HighReward = factor(
+          HighReward,
+          levels = focal_levels,
+          labels = c(
+            "high=4  (single 4)",
+            "high=3  (single 3)",
+            "high=2  (single 2)"
+          )
+        ),
+        QuantileLabel = factor(
+          paste0("Q", sprintf("%.0f", 100 * Quantile)),
+          levels = paste0("Q", sprintf("%.0f", 100 * quantile_probs))
+        )
+      )
+
+    baseline_q_plot <- ggplot(
+      baseline_q_df,
+      aes(x = QuantileLabel, y = BaselineRT, group = 1)
+    ) +
+      geom_line(color = "#4E79A7", linewidth = 1.15) +
+      geom_point(color = "#4E79A7", size = 2.8) +
+      facet_grid(SubjectFacet ~ HighReward, scales = "free_y") +
+      labs(
+        title = paste0("Baseline single-cue RT by quantile (", sub_tag, ", ", ses_tag, ")"),
+        subtitle = paste0(
+          "Chose higher reward only. Y = RT quantile of single-cue trials: (4), (3), or (2). ",
+          "Same Q10–Q90 x-axis as competitor-cost quantile plots."
+        ),
+        x = "RT quantile",
+        y = "Baseline RT at quantile (ms)"
+      ) +
+      coord_cartesian(ylim = c(0, rt_plot_ylim_ms)) +
+      theme_minimal(base_size = plot_base_size) +
+      theme(
+        plot.title = element_text(size = title_size, face = "bold"),
+        plot.subtitle = element_text(size = subtitle_size * 0.9),
+        axis.title = element_text(size = axis_title_size),
+        axis.text = element_text(size = axis_text_size * 0.75),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = strip_text_size * 0.75, face = "bold"),
+        strip.text.y = element_text(size = strip_text_size * 0.65, face = "bold")
+      )
+
+    baseline_q_file <- file.path(fig_dir, paste0(setting_tag, "_BaselineSingle_RTbyQuantile.png"))
+    ggsave(
+      filename = baseline_q_file,
+      plot = baseline_q_plot + bold_axes_theme,
+      width = 22,
+      height = max(14, 2.8 * n_distinct(baseline_q_df$SubjectFacet)),
+      dpi = 300,
+      limitsize = FALSE
+    )
+    message("Saved: ", baseline_q_file)
+  }
   }
 
   # ---- Competitor-cost plots for ACCURACY (mean ΔACC + RT-bin ACC) ----
