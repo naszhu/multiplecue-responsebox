@@ -1,9 +1,11 @@
 # WHY THIS SCRIPT
 # Speed-accuracy tradeoff (SAT) by condition, same style as the relative-scale
-# AllDev plot (Mean RT vs Accuracy, one point per condition, free axes), but
+# AllDev plot (Median RT vs Accuracy, one point per condition, free axes), but
 # sliced within a subject so you can see how the tradeoff pattern evolves:
 #   1) by experimental session (ses 6..17 as separate facets)
 #   2) by participation day (pool all valid sessions on day 1, day 2, ...)
+# Also saves correct-RT variants: Median RT computed only on ACC==1 trials
+# (Accuracy still from all trials in that condition).
 #
 # Config: subjects_to_plot <- c(10, 12)  → one figure per subject per view.
 # Filenames start with plot meaning: SpeedAccuracyTradeoff_bySession_..._subN.png
@@ -292,19 +294,25 @@ plot_df <- plot_df %>%
     )
   )
 
-make_tradeoff_df <- function(df, facet_col) {
+make_tradeoff_df <- function(df, facet_col, correct_rt_only = FALSE) {
   df %>%
     group_by(.data[[facet_col]], Condition) %>%
     summarize(
-      MeanRT = mean(RT_num, na.rm = TRUE),
+      MedianRT = if (correct_rt_only) {
+        median(RT_num[ACC_num == 1], na.rm = TRUE)
+      } else {
+        median(RT_num, na.rm = TRUE)
+      },
       Accuracy = mean(ACC_num, na.rm = TRUE),
       Trials = n(),
+      NCorrect = sum(ACC_num == 1, na.rm = TRUE),
       CueCount = dplyr::first(CueCount),
       RewardDiff = dplyr::first(RewardDiff),
       SessionsInFacet = paste(sort(unique(SessionNumInt)), collapse = ","),
       NSessions = n_distinct(SessionNumInt),
       .groups = "drop"
     ) %>%
+    filter(is.finite(MedianRT)) %>%
     mutate(
       ConditionLabel = paste0("(", as.character(Condition), ")"),
       TradeoffColor = assign_tradeoff_color(
@@ -315,8 +323,15 @@ make_tradeoff_df <- function(df, facet_col) {
     )
 }
 
-make_sat_plot <- function(tradeoff_df, facet_col, title, subtitle, ncol) {
-  ggplot(tradeoff_df, aes(x = MeanRT, y = Accuracy, group = 1)) +
+make_sat_plot <- function(
+  tradeoff_df,
+  facet_col,
+  title,
+  subtitle,
+  ncol,
+  xlab = "Median RT (ms)"
+) {
+  ggplot(tradeoff_df, aes(x = MedianRT, y = Accuracy, group = 1)) +
     geom_point(aes(color = TradeoffColor), size = point_size) +
     geom_text(
       aes(label = ConditionLabel, color = TradeoffColor),
@@ -326,7 +341,7 @@ make_sat_plot <- function(tradeoff_df, facet_col, title, subtitle, ncol) {
     ) +
     scale_color_identity() +
     facet_wrap(as.formula(paste0("~", facet_col)), ncol = ncol, scales = "free") +
-    labs(title = title, subtitle = subtitle, x = "Mean RT (ms)", y = "Accuracy") +
+    labs(title = title, subtitle = subtitle, x = xlab, y = "Accuracy") +
     scale_x_continuous(expand = expansion(mult = c(0.08, 0.12))) +
     scale_y_continuous(expand = expansion(mult = c(0.08, 0.22))) +
     theme_minimal(base_size = plot_base_size) +
@@ -350,7 +365,7 @@ for (sid in subject_ids) {
   device_lab <- unique(subj_df$DeviceLabel)[1]
   sessions_present <- sort(unique(subj_df$SessionNumInt))
 
-  # ---- 1) By session ----
+  # ---- 1) By session (all trials for median RT) ----
   by_ses_df <- make_tradeoff_df(subj_df, "SessionFacet") %>%
     filter(as.integer(gsub("ses", "", as.character(SessionFacet))) %in% sessions_present)
 
@@ -385,6 +400,38 @@ for (sid in subject_ids) {
     limitsize = FALSE
   )
   message("Saved: ", ses_file)
+
+  # ---- 1b) By session, correct RT only ----
+  by_ses_corr_df <- make_tradeoff_df(subj_df, "SessionFacet", correct_rt_only = TRUE) %>%
+    filter(as.integer(gsub("ses", "", as.character(SessionFacet))) %in% sessions_present)
+
+  ses_corr_plot <- make_sat_plot(
+    by_ses_corr_df,
+    "SessionFacet",
+    title = paste0(
+      "Speed-Accuracy Tradeoff by Session (Correct RT; Relative Scales; sub", sid, ", ", ses_tag, ")"
+    ),
+    subtitle = paste0(
+      "Device=", device_lab, ". Median RT from ACC==1 trials only; Accuracy from all trials. ",
+      "Sessions: ", paste(sessions_present, collapse = ", "), "."
+    ),
+    ncol = ses_ncol,
+    xlab = "Median correct RT (ms)"
+  )
+
+  ses_corr_file <- file.path(
+    fig_dir,
+    paste0("SpeedAccuracyTradeoff_bySession_CorrectRT_RelativeScale_sub", sid, ".png")
+  )
+  ggsave(
+    filename = ses_corr_file,
+    plot = ses_corr_plot + bold_axes_theme,
+    width = max(14, 5.5 * ses_ncol),
+    height = max(8, 4.8 * ses_nrow),
+    dpi = 300,
+    limitsize = FALSE
+  )
+  message("Saved: ", ses_corr_file)
 
   # ---- 2) By participation day (pool sessions within day) ----
   day_levels_subj <- sort(unique(subj_df$DayIndex[!is.na(subj_df$DayIndex)]))
@@ -445,6 +492,37 @@ for (sid in subject_ids) {
     limitsize = FALSE
   )
   message("Saved: ", day_file)
+
+  # ---- 2b) By participation day, correct RT only ----
+  by_day_corr_df <- make_tradeoff_df(subj_day_df, "DayFacet", correct_rt_only = TRUE)
+
+  day_corr_plot <- make_sat_plot(
+    by_day_corr_df,
+    "DayFacet",
+    title = paste0(
+      "Speed-Accuracy Tradeoff by Participation Day (Correct RT; Relative Scales; sub", sid, ")"
+    ),
+    subtitle = paste0(
+      "Device=", device_lab, ". Median RT from ACC==1 trials only; Accuracy from all trials. ",
+      "Axes free per day."
+    ),
+    ncol = day_ncol,
+    xlab = "Median correct RT (ms)"
+  )
+
+  day_corr_file <- file.path(
+    fig_dir,
+    paste0("SpeedAccuracyTradeoff_byParticipationDay_CorrectRT_RelativeScale_sub", sid, ".png")
+  )
+  ggsave(
+    filename = day_corr_file,
+    plot = day_corr_plot + bold_axes_theme,
+    width = max(12, 7 * day_ncol),
+    height = max(8, 5.5 * day_nrow),
+    dpi = 300,
+    limitsize = FALSE
+  )
+  message("Saved: ", day_corr_file)
 
   cat(sprintf(
     "sub%d: sessions=%s; days=%s\n",

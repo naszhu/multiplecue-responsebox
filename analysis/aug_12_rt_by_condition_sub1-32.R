@@ -4,6 +4,9 @@
 # Q70, Q90) computed within each condition — shows the full RT distribution
 # shape across conditions, not just the mean (similar spirit to a quantile/CDF view).
 #
+# Also saves single-cue-only (conditions 1–4) versions with relative (free_y)
+# scaling per subject, so within-subject RT differences are easier to see.
+#
 # Also: per-subject one-way ANOVA on trial RT for single-cue conditions 1-4
 # (RT ~ Condition within subject). Q50 line in the plot is the median RT; the
 # ANOVA uses all trials because you cannot ANOVA only four median values.
@@ -331,7 +334,14 @@ rt_quantile_df <- bind_rows(rt_quantile_list) %>%
     )
   )
 
-make_rt_quantile_plot <- function(rt_df, panel_tag, subjects_present) {
+make_rt_quantile_plot <- function(
+  rt_df,
+  panel_tag,
+  subjects_present,
+  scales = "fixed",
+  title_extra = "",
+  use_fixed_ylim = TRUE
+) {
   facet_levels <- rt_df %>%
     distinct(SubjectFacet, SubjectNumInt) %>%
     arrange(SubjectNumInt) %>%
@@ -340,21 +350,24 @@ make_rt_quantile_plot <- function(rt_df, panel_tag, subjects_present) {
   rt_df <- rt_df %>%
     mutate(SubjectFacet = factor(SubjectFacet, levels = facet_levels))
 
-  ggplot(rt_df, aes(x = Condition, y = RT_ms, color = QuantileLabel, group = QuantileLabel)) +
+  p <- ggplot(rt_df, aes(x = Condition, y = RT_ms, color = QuantileLabel, group = QuantileLabel)) +
     geom_line(linewidth = 1.05) +
     geom_point(size = 2.3) +
     scale_color_manual(values = quantile_colors, name = "RT quantile") +
-    facet_wrap(~SubjectFacet, ncol = 2, scales = "fixed") +
+    facet_wrap(~SubjectFacet, ncol = 2, scales = scales) +
     labs(
-      title = paste0("RT quantiles by cue condition (", panel_tag, ", ", ses_tag, ")"),
+      title = paste0(
+        "RT quantiles by cue condition (", panel_tag, ", ", ses_tag, ")",
+        title_extra
+      ),
       subtitle = paste0(
         "Within each condition: Q10, Q30, Q50 (median), Q70, Q90 of trial RT. ",
-        "Subjects: ", paste(subjects_present, collapse = ", ")
+        "Subjects: ", paste(subjects_present, collapse = ", "),
+        if (scales == "free_y") " Relative y-scale per subject." else ""
       ),
       x = "Condition",
       y = "RT at quantile (ms)"
     ) +
-    coord_cartesian(ylim = c(0, rt_plot_ylim_ms)) +
     theme_minimal(base_size = plot_base_size) +
     theme(
       plot.title = element_text(size = title_size, face = "bold"),
@@ -365,6 +378,13 @@ make_rt_quantile_plot <- function(rt_df, panel_tag, subjects_present) {
       strip.text = element_text(size = strip_text_size, face = "bold"),
       legend.position = "bottom"
     )
+
+  if (use_fixed_ylim) {
+    p <- p + coord_cartesian(ylim = c(0, rt_plot_ylim_ms))
+  } else {
+    p <- p + scale_y_continuous(expand = expansion(mult = c(0.05, 0.08)))
+  }
+  p
 }
 
 for (panel in plot_panels) {
@@ -383,6 +403,7 @@ for (panel in plot_panels) {
   panel_df <- rt_quantile_df %>%
     filter(SubjectNumInt %in% subjects_in_panel)
 
+  # All 10 conditions, shared y-scale (original)
   panel_plot <- make_rt_quantile_plot(panel_df, panel$tag, subjects_in_panel)
   panel_file <- file.path(fig_dir, paste0(panel$tag, "_", ses_tag, "_RTbyCond_quantiles.png"))
   ggsave(
@@ -394,6 +415,38 @@ for (panel in plot_panels) {
     limitsize = FALSE
   )
   message("Saved: ", panel_file)
+
+  # Single-cue only (1–4), relative y-scale per subject
+  single_panel_df <- panel_df %>%
+    filter(as.character(Condition) %in% single_cue_levels) %>%
+    mutate(Condition = factor(as.character(Condition), levels = single_cue_levels))
+
+  if (nrow(single_panel_df) == 0) {
+    warning(panel$tag, ": no single-cue quantile data; skipping single-cue plot.", call. = FALSE)
+    next
+  }
+
+  single_plot <- make_rt_quantile_plot(
+    single_panel_df,
+    panel$tag,
+    subjects_in_panel,
+    scales = "free_y",
+    title_extra = "; single-cue 1–4, relative y",
+    use_fixed_ylim = FALSE
+  )
+  single_file <- file.path(
+    fig_dir,
+    paste0(panel$tag, "_", ses_tag, "_RTbyCond_quantiles_singleCue_relativeY.png")
+  )
+  ggsave(
+    filename = single_file,
+    plot = single_plot + bold_axes_theme,
+    width = 18,
+    height = max(14, 3.2 * ceiling(length(subjects_in_panel) / 2)),
+    dpi = 300,
+    limitsize = FALSE
+  )
+  message("Saved: ", single_file)
 }
 
 # ---- Per-subject one-way ANOVA: trial RT (single-cue 1–4) ----
