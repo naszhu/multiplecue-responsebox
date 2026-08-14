@@ -23,6 +23,9 @@ exclude_sub6_rtdiff_gt_ms <- 500
 subject_row_fills <- c("#f8f8f8", "#eef3fa")
 subject_blocks_ncol <- 3L
 output_name_tag <- "RTmedian_byDaySessionRank_colorCond_subjectDayCol"
+if (!exists("apply_session_exclusions")) apply_session_exclusions <- FALSE
+if (!exists("exclusion_tier")) exclusion_tier <- "auto"
+if (!exists("output_file_suffix")) output_file_suffix <- ""
 # ----------------
 
 plot_base_size <- 13
@@ -288,6 +291,13 @@ if (!is.na(exclude_sub6_rtdiff_gt_ms)) {
     )
 }
 
+if (apply_session_exclusions) {
+  tiers_path <- file.path(proj_root, "analysis", "session_exclusion_tiers.R")
+  if (!file.exists(tiers_path)) stop("Missing session_exclusion_tiers.R")
+  source(tiers_path, local = TRUE)
+  plot_df <- apply_session_exclusion_filter(plot_df, exclusion_tier, proj_root)
+}
+
 if (nrow(plot_df) == 0) stop("No trials remained after filtering.")
 
 session_day_df <- build_session_participation_day(plot_df)
@@ -429,7 +439,13 @@ make_day_session_rank_plot <- function(page_df, page_tag, subjects_on_page) {
   page_subtitle <- paste0(
     "Each block = one subject; participation days stacked vertically (Day 1, Day 2, ...). ",
     "X = session order within day (lowest session number = 1st). ",
-    "Y scale shared across days within each subject. Subjects: ",
+    "Y scale shared across days within each subject. ",
+    if (apply_session_exclusions) {
+      paste0("Tier-1 excluded sessions removed (tier=", exclusion_tier, "). ")
+    } else {
+      ""
+    },
+    "Subjects: ",
     paste(subjects_on_page, collapse = ", ")
   )
 
@@ -497,7 +513,7 @@ for (start_id in page_starts) {
 
   out_file <- file.path(
     fig_dir,
-    paste0(output_name_tag, "_", page_tag, "_", ses_tag, ".png")
+    paste0(output_name_tag, "_", page_tag, "_", ses_tag, output_file_suffix, ".png")
   )
   ggsave(
     filename = out_file,
