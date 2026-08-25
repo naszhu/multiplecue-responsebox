@@ -15,10 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent
-RE_FILE = re.compile(
-    r"^CCRP_subj(.+?)_ses(\d+)(?:\(([^)]+)\))?_trials(?:_(a\d+))?\.csv$",
-    re.IGNORECASE,
-)
+RE_FILE = re.compile(r"^CCRP_subj(.+?)_ses(\d+)_trials\.csv$", re.IGNORECASE)
 RE_STD = re.compile(r"^CCRP_subj(\d+)_ses(\d+)_trials\.csv$", re.IGNORECASE)
 RE_LEAD_DIGITS = re.compile(r"^(\d+)")
 REWARD_COL = "CumReward"
@@ -35,20 +32,7 @@ class TrialFile:
     session: int
     subj_token: str
     is_standard: bool
-    variant: str  # subject suffix only (e.g. star); empty for standard files
-    session_repeat: str = ""  # e.g. "2" from ses1(2); same session row, not a variant row
-    computer_tag: str = ""  # e.g. "a3" when same session came from multiple computers
-
-
-def pay_row_variant(entry: TrialFile) -> str:
-    parts: list[str] = []
-    if entry.variant:
-        parts.append(entry.variant)
-    if entry.session_repeat:
-        parts.append(f"({entry.session_repeat})")
-    if entry.computer_tag:
-        parts.append(entry.computer_tag)
-    return "_".join(parts)
+    variant: str  # empty for standard files
 
 
 def is_test_subj_token(subj_token: str) -> bool:
@@ -71,57 +55,24 @@ def parse_trial_file(path: Path) -> TrialFile | None:
     match = RE_FILE.match(path.name)
     if not match:
         return None
-    subj_token, session, session_repeat, computer_tag = (
-        match.group(1),
-        int(match.group(2)),
-        match.group(3),
-        match.group(4),
-    )
-    session_repeat = session_repeat or ""
-    computer_tag = computer_tag or ""
+    subj_token, session = match.group(1), int(match.group(2))
     if is_test_subj_token(subj_token):
         return None
     lead = RE_LEAD_DIGITS.match(subj_token)
     if not lead:
         return None
     subject_id = int(lead.group(1))
+    is_standard = bool(RE_STD.match(path.name))
     suffix = subj_token[lead.end() :].lstrip("_")
-    variant = suffix
+    variant = "" if is_standard else (suffix or subj_token)
     return TrialFile(
         path=path,
         subject_id=subject_id,
         session=session,
         subj_token=subj_token,
-        is_standard=not suffix and not session_repeat and not computer_tag,
+        is_standard=is_standard,
         variant=variant,
-        session_repeat=session_repeat,
-        computer_tag=computer_tag,
     )
-
-
-def resolve_session_retries(files: list[TrialFile]) -> list[TrialFile]:
-    """Drop exact duplicates; sesN and sesN(2) stay on separate pay rows."""
-    best: dict[tuple[int, int, str, str, str], TrialFile] = {}
-    for entry in files:
-        key = (
-            entry.subject_id,
-            entry.session,
-            entry.variant,
-            entry.session_repeat,
-            entry.computer_tag,
-        )
-        existing = best.get(key)
-        if existing is None:
-            best[key] = entry
-            continue
-        print(
-            f"Warning: duplicate key subj{entry.subject_id} "
-            f"ses{entry.session} variant={pay_row_variant(entry)!r}; "
-            f"keeping {entry.path.name}",
-            file=sys.stderr,
-        )
-        best[key] = entry
-    return list(best.values())
 
 
 def last_cum_reward(path: Path) -> float | None:
@@ -139,7 +90,7 @@ def last_cum_reward(path: Path) -> float | None:
 def iter_trial_csv_paths(data_dir: Path):
     """Yield trial CSV paths from subject subfolders (and legacy root files)."""
     seen: set[Path] = set()
-    for pattern in ("sub*/CCRP_subj*_ses*_trials*.csv", "CCRP_subj*_ses*_trials*.csv"):
+    for pattern in ("sub*/CCRP_subj*_ses*_trials.csv", "CCRP_subj*_ses*_trials.csv"):
         for path in sorted(data_dir.glob(pattern)):
             resolved = path.resolve()
             if resolved not in seen:
@@ -169,9 +120,7 @@ def report_unusual_naming(files: list[TrialFile]) -> None:
         any_unusual = True
         print(f"subj {subject_id}: unusual file name(s):")
         for entry in sorted(unusual, key=lambda f: (f.session, f.path.name)):
-            label = pay_row_variant(entry) or entry.subj_token
-            if entry.session_repeat:
-                label = f"retry ({entry.session_repeat})"
+            label = entry.variant or entry.subj_token
             suffix = " [not counted]" if is_excluded_from_pay(entry) else ""
             print(f"  ses{entry.session} ({label}): {entry.path.name}{suffix}")
 
@@ -196,13 +145,12 @@ def build_pay_table(
                 file=sys.stderr,
             )
             continue
-        row_variant = pay_row_variant(entry)
-        key = (entry.session, row_variant)
+        key = (entry.session, entry.variant)
         bucket = rewards.setdefault(key, {})
         if entry.subject_id in bucket:
             print(
                 f"Warning: duplicate key subj{entry.subject_id} "
-                f"ses{entry.session} variant={row_variant!r}; "
+                f"ses{entry.session} variant={entry.variant!r}; "
                 f"keeping {entry.path.name}",
                 file=sys.stderr,
             )
@@ -272,7 +220,6 @@ def main() -> int:
 
     report_unusual_naming(trial_files)
     payable_files = [f for f in trial_files if not is_excluded_from_pay(f)]
-    payable_files = resolve_session_retries(payable_files)
     header, rows, totals = build_pay_table(payable_files)
     out_path = write_pay_csv(data_dir, header, rows)
 

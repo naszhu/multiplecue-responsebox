@@ -14,8 +14,12 @@ others/To Lea 251127/__pycache__/
 *.pdf
 others/Instructions/
 
-*.csv
+exp/data_from_lab/**/*.csv
+exp/data_from_lab/**/*.json
 *.dat
 *.png
-*.json
 *.docx
+
+analysis/fig/
+
+*.zip

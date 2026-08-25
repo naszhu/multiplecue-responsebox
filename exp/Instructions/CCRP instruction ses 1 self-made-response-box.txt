@@ -8,11 +8,11 @@ __________
 
 Your task is report the color of the circle by pressing one of the four keys on the self-made-response-box.
 
-Place your left middle finger on the left-most key, your left index finger on the second key from the left, your right index finger on the second key from the right, and your right middle finger on the right-most key.
+First, rest both hands naturally on the response box: lightly spread your left fingers over the five keys on the left, and do the same with your right fingers over the five keys on the right.
 
-The colors for your left middle finger, left index finger, right middle finger, and right index finger are {C0}, {C1}, {C2}, and {C3}. This means left-most is {C0}, second from the left is {C1}, right-most is {C2}, and second from the right is {C3}. The color-key mapping is also indicated by the colors shown on the keys.
+The colors for your left middle finger, left index finger, right middle finger, and right index finger are {C0}, {C1}, {C2}, and {C3}. That is, the left-most is {C0}, the second from the left is {C1}, the right-most is {C2}, and the second from the right is {C3}. The color-key mapping is also indicated by the colors shown on the keys.
 
-The order of the colors relative to the keys are shown below the circle.
+The order of the colors relative to the keys is shown below the circle.
 
 __________
 

@@ -1,0 +1,27 @@
+ØVELSE 1
+
+I det følgende vil du se et sort punkt i midten af skærmen. Fixér altid dette punkt, når du starter en forsøgsrunde.
+
+Når du trykker på *space*, vil en farvet cirkel med et tal fra 1 til 4 dukke op i midten af skærmen.
+
+__________
+
+Din opgave er at angive cirkelens farve ved at trykke på en af fire taster: "d", "c", "k" og "m".
+
+Tasterne er knyttet til fire farver: {C0}, {C1}, {C2} og {C3}. Farve-tast-tilknytningen vises også ved farverne på tasterne.
+
+Rækkefølgen af farverne i forhold til tasterne vises under cirklen.
+
+__________
+
+Du optjener point ved korrekt at angive cirkelens farve og ved at reagere så hurtigt som muligt.
+
+Tallet 1 giver 1 point, og så videre op til maksimalt 4 point pr. forsøgsrunde.
+
+Dine point omsættes til en pengebelønning, der tillægges din kompensation. Hvert point er 0,05 DKK værd. Efter hver forsøgsrunde ser du, hvor mange point du har optjent i den pågældende runde i forhold til det mulige, sammen med beløbet i DKK.
+Du vil også se hastigheden af dine reaktioner. Prøv at være så hurtig som muligt, mens du stadig optjener så mange point som muligt.
+__________
+
+Husk at fixere det sorte punkt i midten ved starten af hver forsøgsrunde.
+
+Tryk på *space* for at begynde.

@@ -12,6 +12,7 @@ Display flow (win.flip locations):
 """
 import math
 import random
+import re
 import time
 import json
 import csv
@@ -40,19 +41,25 @@ DEBUG_CONFIG = {
     "enabled": False,
     "trial_duration": 0.001,  # 1ms: short presentation + auto-response + short feedback when enabled
     "auto_advance_instructions": False,
-    "auto_respond": True,
+    "auto_respond": False,
     "simulate_response_box": True,  # In debug auto-response mode, skip serial hardware even if a response box is selected.
     "short_feedback": True,
-    "full_screen": True,  # Toggle fullscreen quickly during testing
+    "full_screen": False,  # Toggle fullscreen quickly during testing
 }
 DEFAULT_PARTICIPANT = "3"
 DEFAULT_MONITOR_NAME = "room1_a4"
 DEFAULT_RESPONSE_DEVICE = RESPONSE_DEVICE_SELF_MADE
-# Physical unit ID: KB=keyboard, RB=Cedrus response box, SRB1–SRB3=self-made boxes.
-DEVICE_NAME_CHOICES = ["KB", "RB", "SRB1", "SRB2", "SRB3"]
+# Physical unit ID: KB=keyboard, RB=Cedrus response box, SRB1–SRB6=self-made boxes.
+DEVICE_NAME_CHOICES = ["KB", "RB", "SRB1", "SRB2", "SRB3", "SRB4", "SRB5", "SRB6"]
+DEVICE_NAME_AUTO_CHOICE = "as assigned"
+DEVICE_NAME_DIALOG_CHOICES = [DEVICE_NAME_AUTO_CHOICE] + DEVICE_NAME_CHOICES
 DEFAULT_DEVICE_NAME = "SRB1"
+if DEFAULT_DEVICE_NAME not in DEVICE_NAME_CHOICES:
+    raise ValueError(
+        f"DEFAULT_DEVICE_NAME must be one of {DEVICE_NAME_CHOICES!r}; got {DEFAULT_DEVICE_NAME!r}."
+    )
 ############################# TO MODIFY ABOVE
-CODE_VERSION = "v3-2026-05-30"
+CODE_VERSION = "v6-2026-06-18"
 
 ############################# COUNTERBALANCE / DATA POLICY
 PRODUCTION_START_PARTICIPANT = 8  # IDs 1–7 pilot → rgby; ID 8+ mapping from CSV
@@ -263,6 +270,20 @@ def _resolve_color_key_mapping_from_dialog(
     return assigned, used, used != assigned
 
 
+def _resolve_device_name_from_dialog(dialog_choice: str) -> tuple[str, str, bool]:
+    """Return (assigned_name, used_name, overridden)."""
+    assigned = DEFAULT_DEVICE_NAME
+    choice = str(dialog_choice).strip()
+    if choice.lower() == DEVICE_NAME_AUTO_CHOICE.lower():
+        return assigned, assigned, False
+    if choice not in DEVICE_NAME_CHOICES:
+        raise SystemExit(
+            f"Device name must be '{DEVICE_NAME_AUTO_CHOICE}' or one of {DEVICE_NAME_CHOICES!r}; "
+            f"got {choice!r}."
+        )
+    return assigned, choice, choice != assigned
+
+
 def _build_device_color_maps(mapping: str) -> tuple[list[int], dict[str, int], dict[str, int]]:
     slot_to_color_id = _slot_color_ids(mapping)
     cedrus_button_to_color_id = {
@@ -319,6 +340,38 @@ def _apply_color_mapping_to_instruction(text: str, mapping: str) -> str:
     return text.format(C0=c0, C1=c1, C2=c2, C3=c3)
 
 
+def _tk_yes_no(title: str, message: str) -> bool:
+    """Yes/no prompt via tkinter (avoids PsychoPy wx second-dialog crash)."""
+    import tkinter as tk
+    from tkinter import messagebox
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+    except tk.TclError:
+        pass
+    answer = messagebox.askyesno(title, message, parent=root)
+    root.destroy()
+    return bool(answer)
+
+
+def _tk_ask_string(title: str, message: str) -> str | None:
+    """Text prompt via tkinter (avoids PsychoPy wx second-dialog crash)."""
+    import tkinter as tk
+    from tkinter import simpledialog
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+    except tk.TclError:
+        pass
+    value = simpledialog.askstring(title, message, parent=root)
+    root.destroy()
+    return value
+
+
 def _resolve_data_output_paths(
     participant: str, session: int, out_dir: Path
 ) -> tuple[Path, Path, str, str, str]:
@@ -333,16 +386,16 @@ def _resolve_data_output_paths(
     if not trials_path.exists() and not metadata_path.exists():
         return trials_path, metadata_path, base_stem, "", ""
 
-    repeat_dlg = gui.Dlg(title="Participant data already exists")
-    repeat_dlg.addText(
-        f"Data already exists for participant {participant}, session {session}.\n\n"
-        "To continue anyway, enter a reason below and click OK."
+    reason = _tk_ask_string(
+        "Participant data already exists",
+        (
+            f"Data already exists for participant {participant}, session {session}.\n\n"
+            "To continue anyway, enter a reason:"
+        ),
     )
-    repeat_dlg.addField("Reason (required)", initial="")
-    repeat_dlg.show()
-    if not repeat_dlg.OK:
+    if reason is None:
         raise SystemExit("Repeat run cancelled.")
-    reason = str(repeat_dlg.data[0]).strip()
+    reason = reason.strip()
     if not reason:
         raise SystemExit("A reason is required to overwrite existing participant data.")
 
@@ -357,16 +410,58 @@ def _resolve_data_output_paths(
         suffix_n += 1
 
 
+def _max_completed_session(participant: str, out_dir: Path) -> int | None:
+    """Highest session number found in data_written for this participant, or None."""
+    prefix = f"CCRP_subj{participant}_ses"
+    max_session = None
+    if not out_dir.is_dir():
+        return None
+    for path in out_dir.iterdir():
+        if not path.is_file() or not path.name.startswith(prefix):
+            continue
+        match = re.match(r"^(\d+)", path.name[len(prefix):])
+        if match:
+            session_num = int(match.group(1))
+            max_session = session_num if max_session is None else max(max_session, session_num)
+    return max_session
+
+
+def _suggested_next_session(participant: str, out_dir: Path) -> int:
+    """Next session to run: 1 if no prior data, else highest existing session + 1."""
+    max_session = _max_completed_session(participant, out_dir)
+    return 1 if max_session is None else max_session + 1
+
+
+def _confirm_unexpected_session(participant: str, session: int, out_dir: Path) -> None:
+    """If entered session differs from inferred next session, require explicit confirmation."""
+    expected = _suggested_next_session(participant, out_dir)
+    if session == expected:
+        return
+    if not _tk_yes_no(
+        "Confirm session number",
+        (
+            f"From reading your data, it seems that your next session number is {expected}.\n\n"
+            f"You entered session {session}. Are you sure you want to continue?"
+        ),
+    ):
+        raise SystemExit("Session confirmation cancelled.")
+
+
 # Session dialog: run one session per launch (6+ uses experimental config: 8 blocks × 50 trials)
+DATA_OUT_DIR = (EXP_DIR / "data_written").resolve()
+_dialog_default_participant = (
+    DEFAULT_PARTICIPANT if DEFAULT_PARTICIPANT in PARTICIPANT_CHOICES else "1"
+)
+_dialog_default_session = _suggested_next_session(_dialog_default_participant, DATA_OUT_DIR)
 PARTICIPATION_DAY_LABEL_TO_NUM = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4}
 session_dlg = gui.Dlg(title="CCRP Session")
 session_dlg.addField(
     "Participant",
-    initial=DEFAULT_PARTICIPANT if DEFAULT_PARTICIPANT in PARTICIPANT_CHOICES else "1",
+    initial=_dialog_default_participant,
     choices=PARTICIPANT_CHOICES,
 )
 session_dlg.addText("— Participant: fill in the fields below —")
-session_dlg.addField("Session", initial=1)
+session_dlg.addField("Session", initial=_dialog_default_session)
 session_dlg.addField(
     "First session of day?",
     initial="yes",
@@ -397,9 +492,9 @@ session_dlg.addField(
 )
 session_dlg.addField(
     "Device name",
-    initial=DEFAULT_DEVICE_NAME,
-    choices=DEVICE_NAME_CHOICES,
-    tip="Physical unit: KB=keyboard, RB=Cedrus box, SRB1–SRB3=self-made response boxes.",
+    initial=DEVICE_NAME_AUTO_CHOICE,
+    choices=DEVICE_NAME_DIALOG_CHOICES,
+    tip="Default uses DEFAULT_DEVICE_NAME from code. Pick KB/RB/SRB1–6 only to override.",
 )
 session_dlg.addField(
     "Color map layout",
@@ -438,17 +533,15 @@ SLOT_TO_COLOR_ID, CEDRUS_BUTTON_TO_COLOR_ID, SELF_MADE_PIN_TO_COLOR_ID = _build_
     COLOR_KEY_MAPPING
 )
 RESPONSE_DEVICE = session_dlg.data[10]
-DEVICE_NAME = str(session_dlg.data[11]).strip()
-if DEVICE_NAME not in DEVICE_NAME_CHOICES:
-    raise SystemExit(
-        f"Device name must be one of {DEVICE_NAME_CHOICES!r}; got {DEVICE_NAME!r}."
-    )
+DEVICE_NAME_ASSIGNED, DEVICE_NAME, DEVICE_NAME_OVERRIDDEN = _resolve_device_name_from_dialog(
+    session_dlg.data[11]
+)
 COLOR_MAP_LAYOUT = session_dlg.data[12]  # "horizontal" or "keyboard"
 MONITOR_NAME = str(session_dlg.data[13]).strip() or MONITOR_NAME
 
-_out_dir = (EXP_DIR / "data_written").resolve()
+_confirm_unexpected_session(PARTICIPANT, SESSION, DATA_OUT_DIR)
 _out_trials_path, _out_metadata_path, DATA_FILE_STEM, REPEAT_DATA_NOTE, REPEAT_REASON = _resolve_data_output_paths(
-    PARTICIPANT, SESSION, _out_dir
+    PARTICIPANT, SESSION, DATA_OUT_DIR
 )
 
 
@@ -579,6 +672,7 @@ def _build_trial_row(
         "TrialWallClockTime": trial_wall_clock_str,
         "SessionElapsedSec": round(session_elapsed_sec, 3),
         "Note": trial_note,
+        "MonitorName": MONITOR_NAME,
     }
 
 
@@ -590,7 +684,7 @@ DAT_COLUMN_DESCRIPTIONS = {
     "ColorMapLayout": "Color-key legend layout: horizontal row or keyboard-matched 2x2.",
     "ColorKeyMapping": "Four-character mapping for response slots 0–3 left-to-right: each letter is r, g, b, or y.",
     "ResponseDevice": "Response input device used for this run: keyboard, response_box_cedrus, or self-made-response-box.",
-    "DeviceName": "Physical response unit ID from the session dialog: KB, RB, SRB1, SRB2, or SRB3.",
+    "DeviceName": "Physical response unit ID: KB, RB, SRB1–SRB6 (from code default or dialog override).",
     "Subject": "Participant ID from the session dialog.",
     "Handedness": "Participant handedness from the session dialog.",
     "ColorVision": "Participant color vision status from the session dialog.",
@@ -632,6 +726,7 @@ DAT_COLUMN_DESCRIPTIONS = {
     "TrialWallClockTime": "Local wall-clock date and time when this trial row was logged (YYYY-MM-DD HH:MM:SS.mmm).",
     "SessionElapsedSec": "Seconds since session timing start (monotonic clock), from immediately before the first trial loop iteration after instructions.",
     "Note": "Free-text notes (e.g. escape path); usually empty.",
+    "MonitorName": "Monitor/computer name from the session dialog (e.g. room1_a1–room1_a10).",
 }
 
 
@@ -692,7 +787,8 @@ def _build_metadata(
             "total_warmup_trials": total_warmup,
             "total_trials_warmup_plus_main": n_trials_total,
             "single_stimulus_at_center": bool(cfg.get("center", False)),
-            "color_key_legend_on_screen_sessions_1_to_3": SESSION in (1, 2, 3),
+            "color_key_legend_on_screen_all_trials": bool(cfg.get("color_map", False)),
+            "color_key_legend_on_warmup_trials_when_not_training": not cfg.get("color_map", False),
             "cue_condition_labels": reward_labels,
             "number_of_reward_conditions": n_reward_conds,
             "main_trials_per_reward_condition_per_block_balanced": reps_per_condition,
@@ -735,12 +831,16 @@ def _build_metadata(
             "eye_vision": EYE_VISION,
             "practice": "Y" if SESSION <= 5 else "N",
             "session": SESSION,
+            "session1_instruction_language": SESSION1_INSTRUCTION_LANGUAGE if SESSION == 1 else None,
             "number_of_blocks": n_blocks,
             "total_number_of_trials": n_trials_total,
             "reward_money_factor": REWARD_MONEY_FACTOR,
             "full_screen": "Y" if DEBUG_CONFIG.get("full_screen", True) else "N",
             "response_device": RESPONSE_DEVICE,
             "device_name": DEVICE_NAME,
+            "device_name_assigned": DEVICE_NAME_ASSIGNED,
+            "device_name_overridden": DEVICE_NAME_OVERRIDDEN,
+            "default_device_name_in_code": DEFAULT_DEVICE_NAME,
             "response_keys": [k.upper() for k in response_keys],
             "response_box_cedrus_buttons": dict(CEDRUS_BUTTON_TO_COLOR_ID),
             "self_made_response_box_pins": dict(SELF_MADE_PIN_TO_COLOR_ID),
@@ -972,8 +1072,8 @@ for i, pos in enumerate(positions):
 #   cue_stimuli[2] = (outer_blue, inner_blue, text_blue)     # Blue at pos 2
 #   cue_stimuli[3] = (outer_yellow, inner_yellow, text_yellow)  # Yellow at pos 3
 
-# color_response_squares: 4 colored Rects at bottom (Session 1 only)
-#   Index 0=Red, 1=Green, 2=Blue, 3=Yellow. Maps colors to key positions.
+# color_response_squares: 4 colored Rects at bottom (training sessions + warm-ups)
+#   Slot colors follow SLOT_TO_COLOR_ID (counterbalanced mapping).
 #   Layout "horizontal": 4 boxes in a row (Red, Green, Blue, Yellow left→right).
 #   Layout "keyboard": relative positions like D/C/K/M - D above C (left), K above M (right), staggered.
 def _color_map_positions(layout: str):
@@ -1192,7 +1292,18 @@ esc_confirm_text = visual.TextStim(win, text="Press ESC again to exit\n\nPress S
 
 # Instructions (match paradigm: InstructionLetterSize=15*StimFactor, wrapWidth=800*StimFactor)
 INSTRUCTION_DIR = Path(__file__).resolve().parent / "Instructions"
+INSTRUCTION_FONT_CJK = EXP_DIR / "fonts" / "NotoSansCJKsc-Regular.otf"
+INSTRUCTION_FONT_CJK_NAME = "Noto Sans CJK SC"
+INSTRUCTION_LANGUAGE_SUFFIX = {"en": "", "zh": " zh", "da": " da"}
+INSTRUCTION_LANGUAGE_SWITCHER = {
+    "en": "If you want to change to 中文 press c; for dansk press d.\n\n",
+    "zh": "如需切换为英文请按 e，如需切换为丹麦语（dansk）请按 d。\n\n",
+    "da": "Hvis du vil skifte til 中文, tryk c; for engelsk tryk e.\n\n",
+}
 INSTRUCTION_WRAP_WIDTH_DEG = 800 * STIM_FACTOR  # 32 deg, match paradigm Instruction
+_instruction_cjk_font_files = (
+    [str(INSTRUCTION_FONT_CJK)] if INSTRUCTION_FONT_CJK.exists() else []
+)
 instructions = visual.TextStim(
     win,
     text="",
@@ -1200,7 +1311,10 @@ instructions = visual.TextStim(
     height=INSTRUCTION_LETTER_SIZE_DEG,
     wrapWidth=INSTRUCTION_WRAP_WIDTH_DEG,
     units=USE_UNITS,
+    fontFiles=_instruction_cjk_font_files,
 )
+DEFAULT_INSTRUCTION_FONT = instructions.font
+SESSION1_INSTRUCTION_LANGUAGE = "en"
 block_break_text = visual.TextStim(
     win,
     text="",
@@ -1210,10 +1324,25 @@ block_break_text = visual.TextStim(
     units=USE_UNITS,
 )
 
+def _load_session1_instruction(language: str = "en") -> str:
+    """Load session-1 instruction text for the selected language and response device."""
+    if language not in INSTRUCTION_LANGUAGE_SUFFIX:
+        raise SystemExit(f"Unsupported instruction language: {language!r}")
+    path = INSTRUCTION_DIR / (
+        f"CCRP instruction ses 1 {RESPONSE_DEVICE}{INSTRUCTION_LANGUAGE_SUFFIX[language]}.txt"
+    )
+    if not path.exists():
+        raise SystemExit(f"Instruction file not found: {path}")
+    return _apply_color_mapping_to_instruction(
+        path.read_text(encoding="utf-8", errors="replace").strip(),
+        COLOR_KEY_MAPPING,
+    )
+
+
 def _load_session_instruction(session: int) -> str:
     """Load instruction text for session (1-based)."""
     if session == 1:
-        path = INSTRUCTION_DIR / f"CCRP instruction ses 1 {RESPONSE_DEVICE}.txt"
+        return _load_session1_instruction("en")
     elif session in (4, 5):
         path = INSTRUCTION_DIR / "CCRP instruction ses 4-5.txt"
     elif session >= 6:
@@ -1221,10 +1350,10 @@ def _load_session_instruction(session: int) -> str:
     else:
         path = INSTRUCTION_DIR / f"CCRP instruction ses {session}.txt"
     if path.exists():
-        return _apply_color_mapping_to_instruction(
-            path.read_text(encoding="utf-8", errors="replace").strip(),
-            COLOR_KEY_MAPPING,
-        )
+        text = path.read_text(encoding="utf-8", errors="replace").strip()
+        if session in (2, 3):
+            return _apply_color_mapping_to_instruction(text, COLOR_KEY_MAPPING)
+        return text
     raise SystemExit(f"Instruction file not found: {path}")
 
 
@@ -1260,13 +1389,67 @@ def _wait_space_or_exit() -> bool:
     return True
 
 
-def _show_instruction_screen(text: str, *, use_session1_height: bool = False) -> bool:
-    """Show instruction screen. Return False if user exits via ESC."""
+def _set_instruction_display(
+    text: str,
+    *,
+    language: str = "en",
+    use_session1_height: bool = False,
+    use_cjk_font: bool = False,
+) -> None:
     instructions.setText(text)
     instructions.height = 0.4 if use_session1_height else INSTRUCTION_LETTER_SIZE_DEG
+    # PsychoPy/pyglet needs fontFiles + family name; a file path alone renders CJK as boxes.
+    if use_cjk_font and INSTRUCTION_FONT_CJK.exists():
+        instructions.font = INSTRUCTION_FONT_CJK_NAME
+    else:
+        instructions.font = DEFAULT_INSTRUCTION_FONT
+
+
+def _show_instruction_screen(text: str, *, use_session1_height: bool = False) -> bool:
+    """Show instruction screen. Return False if user exits via ESC."""
+    _set_instruction_display(text, use_session1_height=use_session1_height)
     instructions.draw()
     win.flip()
     return _wait_space_or_exit()
+
+
+def _show_session1_first_instruction() -> bool:
+    """Session 1 opening instruction with English / 中文 / dansk switching."""
+    global SESSION1_INSTRUCTION_LANGUAGE
+    language = "en"
+    while True:
+        body = _load_session1_instruction(language)
+        _set_instruction_display(
+            INSTRUCTION_LANGUAGE_SWITCHER[language] + body,
+            language=language,
+            use_session1_height=True,
+            use_cjk_font=True,
+        )
+        instructions.draw()
+        win.flip()
+        if DEBUG_CONFIG["enabled"] and DEBUG_CONFIG["auto_advance_instructions"]:
+            SESSION1_INSTRUCTION_LANGUAGE = language
+            core.wait(DEBUG_CONFIG["trial_duration"])
+            return True
+        while True:
+            keys = event.waitKeys(keyList=["space", "escape", "c", "d", "e"])
+            if not keys:
+                continue
+            key = keys[0]
+            if key == "c" and language != "zh":
+                language = "zh"
+                break
+            if key == "d" and language != "da":
+                language = "da"
+                break
+            if key == "e" and language != "en":
+                language = "en"
+                break
+            if key == "space":
+                SESSION1_INSTRUCTION_LANGUAGE = language
+                return True
+            if key == "escape" and _confirm_exit_or_continue():
+                return False
 
 
 # =============================================================================
@@ -1279,9 +1462,12 @@ if INCLUDE_BURNIN_BLOCK:
     if not _show_instruction_screen(_load_burnin_instruction()):
         completed_normally = False
 else:
-    if not _show_instruction_screen(
+    if SESSION == 1:
+        if not _show_session1_first_instruction():
+            completed_normally = False
+    elif not _show_instruction_screen(
         _load_session_instruction(SESSION),
-        use_session1_height=(SESSION == 1),
+        use_session1_height=False,
     ):
         completed_normally = False
 
@@ -1305,7 +1491,7 @@ if completed_normally:
     # Initialize cumulative reward and trial data log
     cum_reward = 0.0
     trial_index = 0
-    out_dir = _out_dir
+    out_dir = DATA_OUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     out_trials_path = _out_trials_path
     out_metadata_path = _out_metadata_path
@@ -1373,7 +1559,8 @@ for trial_in_session in range(total_trials if completed_normally else 0):
 
     clock.reset()
 
-    show_color_map = SESSION in (1, 2, 3)
+    # Training sessions (1–3): legend on every trial. Later sessions: legend on warm-ups only.
+    show_color_map = cfg.get("color_map", False) or bool(trial_data.get("warm_up", 0))
 
     # =========================================================================
     # FLIP B: CUE/STIMULUS SCREEN (stays until keypress or timeout)
