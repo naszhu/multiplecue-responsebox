@@ -19,3 +19,7 @@ exp/data_from_lab/**/*.json
 *.dat
 *.png
 *.docx
+
+analysis/fig/
+
+*.zip
