@@ -1,59 +1,44 @@
-# Multiple Cue Reaction Time Experiment with Custom Response Box
+# multiplecue-responsebox (CCRP)
 
-This repository contains code for running a multiple cue reaction time (RT) experiment using PsychoPy and a self-made response box based on Arduino. The project is designed for precise measurement of reaction times in a visual cueing task, suitable for experimental psychology or neuroscience research.
+Lab experiment and behavioral analysis for the **Cued Color Response Paradigm**: reward-cued color→key selection under time pressure (single- and dual-cue competition).
 
-## Features
+Participants see colored circles and press the matching color key (keyboard, Cedrus, or self-made Arduino response box). Digit cues mark which colors are rewarded and by how much; dual-cue trials create competing options. Points convert to money.
 
-- **Precise Stimulus Timing:** Uses PsychoPy for accurate visual stimulus presentation and response collection.
-- **Custom Response Box Integration:** Communicates with an Arduino-based response box via serial port for hardware-level response registration.
-- **Synchronized Timing:** Sends/receives signals to/from the Arduino to ensure microsecond-level accuracy between stimulus display and response event.
-- **Automatic Data Collection:** Collects RTs, provides trial-by-trial feedback, and outputs summary statistics at the end of the experiment.
+## Design (short)
 
-## How It Works
+- Sessions **1–5**: practice
+- Sessions **6–17**: experimental (~10 cue conditions per session)
+- Trial counts and timing: `exp/trial_number_design.md`
 
-1. **Initialization:** Sets up the serial communication with the Arduino response box and the PsychoPy experiment window.
-2. **Trial Loop:** For each trial:
-   - Displays a fixation point, waits for a random interval.
-   - Presents a cue (red circle).
-   - Sends a synchronization signal (`'S'`) to the Arduino at the exact moment the cue appears.
-   - Waits for response timing data from the Arduino, which measures the physical button press latency.
-   - Displays feedback on the participant's reaction time.
-3. **Summary:** At the end, prints the average RT and closes all connections safely.
+## Run experiment
 
-## Hardware Requirements
-
-- A computer with Python and [PsychoPy](https://www.psychopy.org/) installed.
-- An Arduino board flashed with appropriate response-box firmware (detects button presses and communicates via serial).
-- A simple response box wired to the Arduino (one or more push buttons).
-- Proper USB cable and permissions for accessing `/dev/ttyACM0` (or adjust for your system).
-
-## Software Requirements
-
-- Python 3.x
-- PsychoPy
-- PySerial
-
-Install requirements (if needed):
-```
-pip install psychopy pyserial
+```bash
+cd exp
+python testmain.py
 ```
 
-## Running the Experiment
+Main entry point: **`exp/testmain.py`**. Choose subject, session, and response device in the startup dialog.
 
-1. Ensure the Arduino is connected and recognized by your OS.
-2. Update the serial port in `test.py` if it's not `/dev/ttyACM0`.
-3. Run the script:
-   ```
-   python test.py
-   ```
-4. Follow the on-screen instructions. Press the designated button on the response box as soon as you see the cue.
+Hardware smoke tests: `exp/test_self_made_response_box.py`, `exp/test_cedrus_box.py`. Older Arduino sync demo: `exp/test.py`.
 
-## Notes
+## Analysis
 
-- Press `ESC` at any time during a trial to exit safely.
-- The script displays individual feedback for 5 trials and computes the average RT at the end.
+R scripts under `analysis/` (RT, accuracy, SAT, session QC). Typical cohort in recent scripts: subjects ~1–32, sessions 6–17. Lab CSVs live under `exp/data_from_lab/` (mostly gitignored).
 
+Example:
 
+```bash
+Rscript analysis/aug_12_rt_by_condition_sub1-32.R
+```
 
----
+## Layout
 
+- `exp/` — PsychoPy experiment + lab data helpers
+- `analysis/` — R analysis and figures
+- `3d print/` — response-box hardware files
+- `ethics/`, `forms/` — ethics / consent
+
+## Related repos
+
+- [multiplecue-prospectiveM](https://github.com/naszhu/multiplecue-prospectiveM) — PM extension of this paradigm
+- [multiplecue-RTfit](https://github.com/naszhu/multiplecue-RTfit) — MIS+LBA fits on this project's lab data
